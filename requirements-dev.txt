@@ -1,0 +1,23 @@
+# Development Dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+pytest-asyncio>=0.21.0
+requests-mock>=1.10.0
+flask>=2.3.0                 # For mock API server
+psutil>=5.9.0                # For performance testing
+
+# Code Quality
+black>=23.0.0               # Code formatting
+isort>=5.12.0               # Import sorting
+mypy>=1.0.0                 # Type checking
+flake8>=6.0.0               # Linting
+bandit>=1.7.0               # Security linting
+
+# Documentation
+sphinx>=6.0.0              # Documentation generation
+sphinx-rtd-theme>=1.2.0    # Documentation theme
+
+# Performance
+memory-profiler>=0.61.0    # Memory profiling
+line-profiler>=4.0.0       # Line-by-line profiling

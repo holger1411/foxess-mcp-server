@@ -1,0 +1,25 @@
+# FoxESS MCP Server Requirements
+
+# Core Dependencies
+mcp>=1.0.0                    # Model Context Protocol SDK
+requests>=2.28.0              # HTTP client for API calls
+pydantic>=2.0.0               # Data validation and settings
+python-dateutil>=2.8.0       # Date/time parsing and manipulation
+cachetools>=5.0.0             # In-memory caching
+pytz>=2023.3                  # Timezone handling
+
+# Security & Crypto
+cryptography>=3.4.0          # For API signature generation
+
+# Optional Analytics Dependencies
+numpy>=1.24.0                 # Numerical computing (optional)
+pandas>=2.0.0                 # Data analysis (optional)
+
+# Development Dependencies (install with: pip install -r requirements-dev.txt)
+# pytest>=7.0.0
+# pytest-cov>=4.0.0
+# pytest-mock>=3.10.0
+# black>=23.0.0
+# isort>=5.12.0
+# mypy>=1.0.0
+# flake8>=6.0.0

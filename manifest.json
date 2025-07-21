@@ -1,0 +1,181 @@
+{
+  "name": "foxess-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP Server for FoxESS Solar Inverters - AI access to solar energy data",
+  "author": "FoxESS MCP Community",
+  "license": "MIT",
+  "homepage": "https://github.com/holger1411/foxess-mcp-server",
+  "keywords": ["mcp", "foxess", "solar", "inverter", "energy", "claude"],
+  
+  "mcp": {
+    "server": {
+      "name": "foxess-mcp-server",
+      "version": "0.1.0"
+    },
+    "tools": [
+      {
+        "name": "foxess_analysis",
+        "description": "Analyze FoxESS solar inverter data with real-time and historical insights",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "device_sn": {
+              "type": "string",
+              "description": "FoxESS device serial number"
+            },
+            "time_range": {
+              "type": "string",
+              "enum": ["realtime", "1h", "1d", "1w", "1m", "3m", "custom"],
+              "description": "Time range for analysis"
+            },
+            "variables": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "Energy variables to analyze"
+            },
+            "start_time": {
+              "type": "string",
+              "description": "Custom start time (ISO format)"
+            },
+            "end_time": {
+              "type": "string", 
+              "description": "Custom end time (ISO format)"
+            }
+          },
+          "required": ["device_sn", "time_range"]
+        }
+      },
+      {
+        "name": "foxess_diagnosis",
+        "description": "Diagnose FoxESS system health and performance issues",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "device_sn": {
+              "type": "string",
+              "description": "FoxESS device serial number"
+            },
+            "check_type": {
+              "type": "string",
+              "enum": ["health", "performance", "errors", "comprehensive"],
+              "description": "Type of diagnostic check"
+            },
+            "include_recommendations": {
+              "type": "boolean",
+              "default": true,
+              "description": "Include optimization recommendations"
+            }
+          },
+          "required": ["device_sn", "check_type"]
+        }
+      },
+      {
+        "name": "foxess_forecast",
+        "description": "Generate FoxESS energy forecasts and optimization recommendations",
+        "inputSchema": {
+          "type": "object", 
+          "properties": {
+            "device_sn": {
+              "type": "string",
+              "description": "FoxESS device serial number"
+            },
+            "forecast_type": {
+              "type": "string",
+              "enum": ["daily", "weekly", "monthly"],
+              "description": "Forecast time horizon"
+            },
+            "weather_integration": {
+              "type": "boolean",
+              "default": false,
+              "description": "Include weather data in forecast"
+            },
+            "optimization_focus": {
+              "type": "string",
+              "enum": ["yield", "cost", "battery_life", "grid_stability"],
+              "description": "Optimization objective"
+            }
+          },
+          "required": ["device_sn", "forecast_type"]
+        }
+      }
+    ]
+  },
+
+  "configuration": {
+    "foxess_api_key": {
+      "type": "string",
+      "description": "Your FoxESS Private API Token from foxesscloud.com/personal_center/api_management",
+      "sensitive": true,
+      "required": true,
+      "validation": {
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        "message": "Must be a valid UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
+      }
+    },
+    "foxess_device_sn": {
+      "type": "string", 
+      "description": "Your FoxESS Device Serial Number",
+      "sensitive": true,
+      "required": true,
+      "validation": {
+        "pattern": "^[A-Z0-9]{10,20}$",
+        "message": "Must be 10-20 alphanumeric characters"
+      }
+    },
+    "cache_enabled": {
+      "type": "boolean",
+      "description": "Enable caching for improved performance",
+      "default": true
+    },
+    "cache_ttl_minutes": {
+      "type": "integer",
+      "description": "Cache time-to-live in minutes",
+      "default": 5,
+      "minimum": 1,
+      "maximum": 60
+    },
+    "rate_limit_enabled": {
+      "type": "boolean", 
+      "description": "Enable rate limiting protection",
+      "default": true
+    },
+    "log_level": {
+      "type": "string",
+      "enum": ["DEBUG", "INFO", "WARNING", "ERROR"],
+      "description": "Logging level",
+      "default": "INFO"
+    }
+  },
+
+  "entry_point": {
+    "type": "python_module",
+    "module": "foxess_mcp_server.server",
+    "function": "main"
+  },
+
+  "requirements": {
+    "python_version": ">=3.8",
+    "dependencies": [
+      "mcp>=1.0.0",
+      "requests>=2.28.0", 
+      "pydantic>=2.0.0",
+      "python-dateutil>=2.8.0",
+      "cachetools>=5.0.0",
+      "pytz>=2023.3"
+    ]
+  },
+
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/holger1411/foxess-mcp-server.git"
+  },
+
+  "bugs": {
+    "url": "https://github.com/holger1411/foxess-mcp-server/issues"
+  },
+
+  "support": {
+    "documentation": "https://github.com/holger1411/foxess-mcp-server/wiki",
+    "community": "https://github.com/holger1411/foxess-mcp-server/discussions"
+  }
+}

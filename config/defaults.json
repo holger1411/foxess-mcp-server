@@ -1,0 +1,161 @@
+{
+  "foxess_api": {
+    "base_url": "https://www.foxesscloud.com",
+    "api_prefix": "/op/v0",
+    "endpoints": {
+      "device_list": "/op/v0/device/list",
+      "device_detail": "/op/v0/device/detail", 
+      "realtime_data": "/op/v0/device/real/query",
+      "historical_data": "/op/v0/device/history/query",
+      "report_data": "/op/v0/device/report/query"
+    },
+    "rate_limits": {
+      "daily_calls_per_device": 1440,
+      "query_interval_seconds": 1,
+      "update_interval_seconds": 2
+    },
+    "timeout_seconds": 30
+  },
+
+  "cache": {
+    "enabled": true,
+    "ttl_minutes": {
+      "realtime_data": 3,
+      "historical_data": 60,
+      "diagnosis_data": 30,
+      "forecast_data": 30
+    },
+    "max_memory_mb": 100,
+    "cleanup_interval_minutes": 15
+  },
+
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "sanitize_logs": true,
+    "max_log_size_mb": 10,
+    "backup_count": 5
+  },
+
+  "security": {
+    "validate_inputs": true,
+    "sanitize_outputs": true,
+    "token_masking": true,
+    "rate_limit_protection": true
+  },
+
+  "variables": {
+    "energy_flow": {
+      "pv_power": {"foxess_name": "pvPower", "unit": "kW", "description": "PV power generation"},
+      "pv1_power": {"foxess_name": "pv1Power", "unit": "kW", "description": "PV string 1 power"},
+      "pv2_power": {"foxess_name": "pv2Power", "unit": "kW", "description": "PV string 2 power"},
+      "loads_power": {"foxess_name": "loadsPower", "unit": "kW", "description": "House consumption"},
+      "feedin_power": {"foxess_name": "feedinPower", "unit": "kW", "description": "Grid feed-in"},
+      "grid_consumption_power": {"foxess_name": "gridConsumptionPower", "unit": "kW", "description": "Grid consumption"},
+      "bat_charge_power": {"foxess_name": "batChargePower", "unit": "kW", "description": "Battery charging"},
+      "bat_discharge_power": {"foxess_name": "batDischargePower", "unit": "kW", "description": "Battery discharging"}
+    },
+    "battery_status": {
+      "soc_1": {"foxess_name": "SoC_1", "unit": "%", "description": "Battery state of charge"},
+      "bat_volt_1": {"foxess_name": "batVolt_1", "unit": "V", "description": "Battery voltage"},
+      "bat_current_1": {"foxess_name": "batCurrent_1", "unit": "A", "description": "Battery current"},
+      "bat_temperature_1": {"foxess_name": "batTemperature_1", "unit": "°C", "description": "Battery temperature"}
+    },
+    "energy_totals": {
+      "today_yield": {"foxess_name": "todayYield", "unit": "kWh", "description": "Today's generation"},
+      "generation": {"foxess_name": "generation", "unit": "kWh", "description": "Total generation"},
+      "feedin": {"foxess_name": "feedin", "unit": "kWh", "description": "Total feed-in"},
+      "grid_consumption": {"foxess_name": "gridConsumption", "unit": "kWh", "description": "Total grid consumption"},
+      "charge_energy_total": {"foxess_name": "chargeEnergyToTal", "unit": "kWh", "description": "Total battery charge"},
+      "discharge_energy_total": {"foxess_name": "dischargeEnergyToTal", "unit": "kWh", "description": "Total battery discharge"}
+    },
+    "grid_parameters": {
+      "r_volt": {"foxess_name": "RVolt", "unit": "V", "description": "Grid voltage R phase"},
+      "r_current": {"foxess_name": "RCurrent", "unit": "A", "description": "Grid current R phase"},
+      "r_power": {"foxess_name": "RPower", "unit": "kW", "description": "Grid power R phase"},
+      "frequency": {"foxess_name": "frequency", "unit": "Hz", "description": "Grid frequency"}
+    },
+    "pv_details": {
+      "pv1_volt": {"foxess_name": "pv1Volt", "unit": "V", "description": "PV1 voltage"},
+      "pv1_current": {"foxess_name": "pv1Current", "unit": "A", "description": "PV1 current"},
+      "pv2_volt": {"foxess_name": "pv2Volt", "unit": "V", "description": "PV2 voltage"},
+      "pv2_current": {"foxess_name": "pv2Current", "unit": "A", "description": "PV2 current"}
+    },
+    "system_status": {
+      "inv_temperature": {"foxess_name": "invTemperation", "unit": "°C", "description": "Inverter temperature"},
+      "ambient_temperature": {"foxess_name": "ambientTemperation", "unit": "°C", "description": "Ambient temperature"},
+      "bat_status_1": {"foxess_name": "batStatus_1", "unit": "", "description": "Battery status"},
+      "invert_status": {"foxess_name": "invertStatus", "unit": "", "description": "Inverter status"},
+      "status": {"foxess_name": "status", "unit": "", "description": "General status"},
+      "fault_code": {"foxess_name": "faultCode", "unit": "", "description": "Fault codes"},
+      "warning_code": {"foxess_name": "warningCode", "unit": "", "description": "Warning codes"}
+    }
+  },
+
+  "time_ranges": {
+    "realtime": {"description": "Current real-time data", "cache_ttl": 180},
+    "1h": {"description": "Last 1 hour", "cache_ttl": 300},
+    "1d": {"description": "Last 24 hours", "cache_ttl": 1800},
+    "1w": {"description": "Last 7 days", "cache_ttl": 3600},
+    "1m": {"description": "Last 30 days", "cache_ttl": 7200},
+    "3m": {"description": "Last 90 days", "cache_ttl": 14400},
+    "custom": {"description": "Custom date range", "cache_ttl": 3600}
+  },
+
+  "diagnosis_checks": {
+    "battery_health": {
+      "parameters": ["soc_1", "bat_volt_1", "bat_current_1", "bat_temperature_1"],
+      "thresholds": {
+        "soc_low": 20,
+        "soc_critical": 10,
+        "voltage_min": 48,
+        "voltage_max": 58,
+        "temp_max": 45,
+        "temp_critical": 55
+      }
+    },
+    "grid_connection": {
+      "parameters": ["r_volt", "frequency", "r_current"],
+      "thresholds": {
+        "voltage_min": 207,
+        "voltage_max": 253,
+        "frequency_min": 49.5,
+        "frequency_max": 50.5
+      }
+    },
+    "pv_performance": {
+      "parameters": ["pv_power", "pv1_power", "pv2_power", "pv1_volt", "pv2_volt"],
+      "thresholds": {
+        "voltage_min": 150,
+        "voltage_max": 500,
+        "power_efficiency": 0.85
+      }
+    },
+    "system_temperature": {
+      "parameters": ["inv_temperature", "ambient_temperature"],
+      "thresholds": {
+        "inv_temp_warning": 65,
+        "inv_temp_critical": 75,
+        "ambient_temp_max": 40
+      }
+    }
+  },
+
+  "forecast_models": {
+    "daily": {
+      "lookback_days": 7,
+      "weather_weight": 0.3,
+      "historical_weight": 0.7
+    },
+    "weekly": {
+      "lookback_weeks": 4,
+      "weather_weight": 0.4,
+      "historical_weight": 0.6
+    },
+    "monthly": {
+      "lookback_months": 6,
+      "weather_weight": 0.2,
+      "historical_weight": 0.8
+    }
+  }
+}
