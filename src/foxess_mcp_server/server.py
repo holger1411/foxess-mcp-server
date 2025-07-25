@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 # MCP imports
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.server.models import (
+from mcp.types import (
     InitializeResult,
     Tool,
     TextContent,
