@@ -44,7 +44,7 @@ Forecast my daily energy yield for the next week and suggest battery optimizatio
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.10 or higher
 - Claude Desktop application
 - FoxESS inverter with cloud connectivity
 - FoxESS Cloud account with API access
@@ -63,6 +63,13 @@ Forecast my daily energy yield for the next week and suggest battery optimizatio
    git clone https://github.com/holger1411/foxess-mcp-server.git
    cd foxess-mcp-server
    
+   # Create and activate virtual environment (recommended)
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   
+   # Upgrade pip to latest version
+   pip install --upgrade pip
+   
    # Install dependencies
    pip install -r requirements.txt
    
@@ -77,7 +84,7 @@ Forecast my daily energy yield for the next week and suggest battery optimizatio
    {
      "mcpServers": {
        "foxess-mcp-server": {
-         "command": "python",
+         "command": "/path/to/foxess-mcp-server/venv/bin/python",
          "args": ["-m", "foxess_mcp_server"],
          "env": {
            "FOXESS_API_KEY": "your-api-token-here",
@@ -87,6 +94,11 @@ Forecast my daily energy yield for the next week and suggest battery optimizatio
      }
    }
    ```
+   
+   **Note**: Replace `/path/to/foxess-mcp-server/` with your actual installation path. You can find it with:
+   ```bash
+   pwd  # Run this inside your foxess-mcp-server directory
+   ```
 
 4. **Verify Installation**
    
@@ -94,6 +106,46 @@ Forecast my daily energy yield for the next week and suggest battery optimizatio
    ```
    Can you check my solar system's current status?
    ```
+
+## 🔧 Troubleshooting
+
+### Installation Issues
+
+**Problem**: `ERROR: Could not find a version that satisfies the requirement mcp>=1.0.0`
+
+**Solution**: This error occurs when using Python < 3.10. The MCP library requires Python 3.10 or higher.
+
+1. Check your Python version:
+   ```bash
+   python3 --version
+   ```
+
+2. If you have Python < 3.10, install Python 3.10+ using:
+   ```bash
+   # macOS with Homebrew
+   brew install python@3.10
+   
+   # Or update to latest Python
+   brew install python@3.12
+   ```
+
+3. Create virtual environment with correct Python version:
+   ```bash
+   python3.10 -m venv venv  # or python3.12
+   source venv/bin/activate
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   pip install -e .
+   ```
+
+**Problem**: `Defaulting to user installation because normal site-packages is not writeable`
+
+**Solution**: Use a virtual environment to avoid permission issues:
+```bash
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
 
 ## 📊 Supported Data Points
 
