@@ -193,7 +193,7 @@ class FoxESSAPIClient:
             Device detail response
         """
         sn = device_sn or self.auth.get_device_sn()
-        data = {'deviceSN': sn}
+        data = {'sn': sn}
         return self._make_request('POST', self.endpoints['device_detail'], data)
     
     def get_realtime_data(self, 
@@ -212,7 +212,7 @@ class FoxESSAPIClient:
         sn = device_sn or self.auth.get_device_sn()
         
         data = {
-            'deviceSN': sn
+            'sn': sn
         }
         
         # Add variables if specified
@@ -264,10 +264,9 @@ class FoxESSAPIClient:
             end_timestamp = int(datetime.now().timestamp() * 1000)
         
         data = {
-            'deviceSN': sn,
-            'beginDate': start_timestamp,
-            'endDate': end_timestamp,
-            'dimension': dimension
+            'sn': sn,
+            'begin': start_timestamp,
+            'end': end_timestamp
         }
         
         # Add variables if specified
@@ -303,7 +302,7 @@ class FoxESSAPIClient:
             date_timestamp = int(datetime.now().timestamp() * 1000)
         
         data = {
-            'deviceSN': sn,
+            'sn': sn,
             'reportType': report_type,
             'date': date_timestamp
         }
