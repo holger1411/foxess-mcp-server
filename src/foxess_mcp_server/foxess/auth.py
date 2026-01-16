@@ -57,41 +57,43 @@ class TokenManager:
                 "Invalid device serial number format. Must be 10-20 alphanumeric characters."
             )
     
-    def generate_signature(self, url: str, timestamp: int) -> str:
+    def generate_signature(self, path: str, timestamp: int) -> str:
         """
         Generate MD5 signature for FoxESS API authentication
         
         Args:
-            url: Full API endpoint URL
+            path: API endpoint path (e.g., /op/v0/device/real/query)
             timestamp: Current timestamp in milliseconds
             
         Returns:
             MD5 signature string
         """
-        # FoxESS signature format: MD5(url + "\r\n" + token + "\r\n" + timestamp)
-        signature_string = f"{url}\r\n{self.token}\r\n{timestamp}"
+        # FoxESS signature format: MD5(path + "\r\n" + token + "\r\n" + timestamp)
+        # IMPORTANT: Uses LITERAL \r\n characters, not escape sequences!
+        signature_string = fr'{path}\r\n{self.token}\r\n{timestamp}'
         return hashlib.md5(signature_string.encode('utf-8')).hexdigest()
     
-    def get_auth_headers(self, url: str, lang: str = 'en') -> Dict[str, str]:
+    def get_auth_headers(self, path: str, lang: str = 'en') -> Dict[str, str]:
         """
         Generate authentication headers for API requests
         
         Args:
-            url: Full API endpoint URL
+            path: API endpoint path (e.g., /op/v0/device/real/query)
             lang: Language code (default: 'en')
             
         Returns:
             Dictionary of authentication headers
         """
         timestamp = int(time.time() * 1000)  # Milliseconds
-        signature = self.generate_signature(url, timestamp)
+        signature = self.generate_signature(path, timestamp)
         
         return {
             'Content-Type': 'application/json',
             'token': self.token,
             'timestamp': str(timestamp),
             'signature': signature,
-            'lang': lang
+            'lang': lang,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
     
     def mask_token(self, text: str) -> str:

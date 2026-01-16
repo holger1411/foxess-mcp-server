@@ -109,8 +109,8 @@ class FoxESSAPIClient:
         # Build full URL
         url = f"{self.base_url}{endpoint}"
         
-        # Get authentication headers
-        headers = self.auth.get_auth_headers(url)
+        # Get authentication headers (pass endpoint path, not full URL)
+        headers = self.auth.get_auth_headers(endpoint)
         
         # Log request (with sanitized URL)
         start_time = time.time()
