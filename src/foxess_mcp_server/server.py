@@ -17,11 +17,8 @@ from typing import Any, Dict, List, Optional
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
-    InitializeResult,
     Tool,
     TextContent,
-    CallToolResult,
-    CallToolRequest
 )
 
 # Local imports
@@ -144,7 +141,7 @@ class FoxESSMCPServer:
             ]
         
         @self.server.call_tool()
-        async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
+        async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             """Handle tool execution requests"""
             try:
                 self.logger.info(f"Tool called: {name}")
@@ -165,12 +162,10 @@ class FoxESSMCPServer:
                 # Format response
                 response_text = json.dumps(result, indent=2, ensure_ascii=False)
                 
-                return CallToolResult(
-                    content=[TextContent(
-                        type="text",
-                        text=response_text
-                    )]
-                )
+                return [TextContent(
+                    type="text",
+                    text=response_text
+                )]
                 
             except Exception as e:
                 self.logger.error(f"Tool execution failed: {e}")
@@ -182,12 +177,10 @@ class FoxESSMCPServer:
                         "timestamp": self._get_timestamp()
                     }
                 }
-                return CallToolResult(
-                    content=[TextContent(
-                        type="text",
-                        text=json.dumps(error_response, indent=2)
-                    )]
-                )
+                return [TextContent(
+                    type="text",
+                    text=json.dumps(error_response, indent=2)
+                )]
     
     def _initialize_tools(self):
         """Initialize tool instances"""
@@ -220,19 +213,13 @@ class FoxESSMCPServer:
         # Validate configuration
         self._validate_configuration()
         
-        # Run server
+        # Run server with stdio transport
         async with stdio_server() as (read_stream, write_stream):
+            init_options = self.server.create_initialization_options()
             await self.server.run(
                 read_stream,
                 write_stream,
-                InitializeResult(
-                    protocolVersion="2024-11-05",
-                    capabilities=self.server.get_capabilities(),
-                    serverInfo={
-                        "name": "foxess-mcp-server",
-                        "version": "0.1.0"
-                    }
-                )
+                init_options
             )
     
     def _validate_configuration(self):
