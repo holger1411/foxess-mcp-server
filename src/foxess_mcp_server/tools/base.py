@@ -147,11 +147,13 @@ class BaseTool(ABC):
     
     def _get_cache_key(self, operation: str, **kwargs) -> str:
         """Generate cache key for operation"""
+        # Extract device_sn and create clean kwargs without it
         device_sn = kwargs.get('device_sn', 'unknown')
+        clean_kwargs = {k: v for k, v in kwargs.items() if k != 'device_sn'}
         return self.cache_manager.generate_cache_key(
             operation=f"{self.name}_{operation}",
             device_sn=device_sn,
-            **kwargs
+            **clean_kwargs
         )
     
     async def _get_cached_or_fetch(self, 
