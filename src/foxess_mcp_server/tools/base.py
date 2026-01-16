@@ -235,8 +235,11 @@ class BaseTool(ABC):
         Returns:
             Operation result
         """
+        import functools
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, operation, *args, **kwargs)
+        # Use functools.partial to handle keyword arguments
+        func = functools.partial(operation, *args, **kwargs)
+        return await loop.run_in_executor(None, func)
     
     def get_tool_info(self) -> Dict[str, Any]:
         """Get tool information"""
