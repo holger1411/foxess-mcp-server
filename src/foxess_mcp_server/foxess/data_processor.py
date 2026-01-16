@@ -101,8 +101,21 @@ class DataProcessor:
         if response.get('errno', 0) != 0:
             raise ValueError(f"API error: {response.get('message', 'Unknown error')}")
         
-        result = response.get('result', {})
-        raw_data = result.get('data', [])
+        result = response.get('result', [])
+        
+        # Result is a list with device data
+        if not result or not isinstance(result, list):
+            return {
+                'device_sn': None,
+                'timestamp': None,
+                'data_points': [],
+                'summary': {},
+                'data_count': 0
+            }
+        
+        # Get first device result
+        device_result = result[0] if result else {}
+        raw_data = device_result.get('datas', [])
         
         # Process data points
         processed_data = []
@@ -116,8 +129,8 @@ class DataProcessor:
         summary = self._create_realtime_summary(processed_data)
         
         return {
-            'device_sn': result.get('deviceSN'),
-            'timestamp': self._convert_timestamp(result.get('timestamp')),
+            'device_sn': device_result.get('deviceSN'),
+            'timestamp': device_result.get('time'),
             'data_points': processed_data,
             'summary': summary,
             'data_count': len(processed_data)
