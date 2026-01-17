@@ -288,8 +288,3 @@ Need help? Here's how to get support:
 2. **Check the [Wiki](https://github.com/holger1411/foxess-mcp-server/wiki)** for documentation
 3. **Create a [new issue](https://github.com/holger1411/foxess-mcp-server/issues/new)** if needed
 
----
-
-**Made with ❤️ for the solar energy community**
-
-*Empowering AI assistants with solar energy intelligence*
