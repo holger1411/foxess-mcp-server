@@ -55,7 +55,7 @@ class FoxESSMCPServer:
             return [
                 Tool(
                     name="foxess_analysis",
-                    description="Analyze FoxESS solar inverter data with real-time and historical insights",
+                    description="Analyze FoxESS solar inverter data with real-time, historical, and aggregated report insights",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -65,8 +65,9 @@ class FoxESSMCPServer:
                             },
                             "time_range": {
                                 "type": "string",
-                                "enum": ["realtime", "1h", "1d", "1w", "1m", "3m", "custom"],
-                                "description": "Time range for analysis"
+                                "enum": ["realtime", "1h", "1d", "1w", "1m", "3m", "custom",
+                                         "report_year", "report_month", "report_day"],
+                                "description": "Time range for analysis. Use report_year for monthly breakdown of a year, report_month for daily breakdown of a month, report_day for hourly breakdown of a day"
                             },
                             "variables": {
                                 "type": "array",
@@ -80,6 +81,18 @@ class FoxESSMCPServer:
                             "end_time": {
                                 "type": "string",
                                 "description": "Custom end time (ISO format, required for custom range)"
+                            },
+                            "year": {
+                                "type": "integer",
+                                "description": "Year for report queries (defaults to current year)"
+                            },
+                            "month": {
+                                "type": "integer",
+                                "description": "Month (1-12) for report_month/report_day queries"
+                            },
+                            "day": {
+                                "type": "integer",
+                                "description": "Day (1-31) for report_day queries"
                             }
                         },
                         "required": ["device_sn", "time_range"]

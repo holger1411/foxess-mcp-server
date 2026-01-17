@@ -468,3 +468,179 @@ class DataProcessor:
         metrics = {k: v for k, v in metrics.items() if v is not None}
         
         return metrics
+    
+    def process_report_response(self, response: Dict[str, Any], 
+                                dimension: str, 
+                                year: int, 
+                                month: int = None, 
+                                day: int = None) -> Dict[str, Any]:
+        """
+        Process report data API response
+        
+        Args:
+            response: Raw FoxESS API response
+            dimension: Report dimension ('year', 'month', 'day')
+            year: Year of the report
+            month: Month of the report (for month/day dimensions)
+            day: Day of the report (for day dimension)
+            
+        Returns:
+            Processed report data with time labels
+        """
+        if response.get('errno', 0) != 0:
+            raise ValueError(f"API error: {response.get('message', 'Unknown error')}")
+        
+        result = response.get('result', [])
+        
+        # Generate time labels based on dimension
+        time_labels = self._generate_time_labels(dimension, year, month, day)
+        
+        # Process each variable
+        processed_variables = {}
+        totals = {}
+        
+        for var_data in result:
+            if not isinstance(var_data, dict):
+                continue
+                
+            variable = var_data.get('variable')
+            values = var_data.get('values', [])
+            unit = var_data.get('unit', 'kWh')
+            
+            if not variable or not values:
+                continue
+            
+            # Map to standard name
+            standard_name = self.variable_mapping.get(variable, variable)
+            
+            # Create time series data
+            time_series = []
+            total = 0
+            
+            for i, value in enumerate(values):
+                if i < len(time_labels):
+                    entry = {
+                        'period': time_labels[i]['label'],
+                        'period_start': time_labels[i]['start'],
+                        'period_end': time_labels[i]['end'],
+                        'value': value,
+                        'unit': unit
+                    }
+                    time_series.append(entry)
+                    if isinstance(value, (int, float)):
+                        total += value
+            
+            processed_variables[standard_name] = {
+                'variable': standard_name,
+                'original_name': variable,
+                'unit': unit,
+                'time_series': time_series,
+                'total': round(total, 2),
+                'average': round(total / len([v for v in values if v > 0]) if any(v > 0 for v in values) else 0, 2),
+                'max': max(values) if values else 0,
+                'min': min(v for v in values if v > 0) if any(v > 0 for v in values) else 0
+            }
+            totals[standard_name] = round(total, 2)
+        
+        # Create summary table (easy to read format)
+        summary_table = self._create_report_summary_table(processed_variables, time_labels, dimension)
+        
+        return {
+            'dimension': dimension,
+            'period': {
+                'year': year,
+                'month': month,
+                'day': day
+            },
+            'time_labels': [t['label'] for t in time_labels],
+            'variables': processed_variables,
+            'totals': totals,
+            'summary_table': summary_table
+        }
+    
+    def _generate_time_labels(self, dimension: str, year: int, 
+                              month: int = None, day: int = None) -> List[Dict[str, Any]]:
+        """Generate time labels based on report dimension"""
+        import calendar
+        
+        labels = []
+        
+        if dimension == 'year':
+            # Monthly labels for the year
+            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            for i, name in enumerate(month_names, 1):
+                days_in_month = calendar.monthrange(year, i)[1]
+                labels.append({
+                    'label': f"{name} {year}",
+                    'start': f"{year}-{i:02d}-01",
+                    'end': f"{year}-{i:02d}-{days_in_month:02d}",
+                    'index': i
+                })
+                
+        elif dimension == 'month':
+            # Daily labels for the month
+            if month is None:
+                month = 1
+            days_in_month = calendar.monthrange(year, month)[1]
+            for d in range(1, days_in_month + 1):
+                labels.append({
+                    'label': f"{d:02d}.{month:02d}.{year}",
+                    'start': f"{year}-{month:02d}-{d:02d} 00:00",
+                    'end': f"{year}-{month:02d}-{d:02d} 23:59",
+                    'index': d
+                })
+                
+        elif dimension == 'day':
+            # Hourly labels for the day
+            if month is None:
+                month = 1
+            if day is None:
+                day = 1
+            for h in range(24):
+                labels.append({
+                    'label': f"{h:02d}:00",
+                    'start': f"{year}-{month:02d}-{day:02d} {h:02d}:00",
+                    'end': f"{year}-{month:02d}-{day:02d} {h:02d}:59",
+                    'index': h
+                })
+        
+        return labels
+    
+    def _create_report_summary_table(self, variables: Dict[str, Any], 
+                                     time_labels: List[Dict[str, Any]],
+                                     dimension: str) -> List[Dict[str, Any]]:
+        """Create a summary table for easy reading"""
+        table = []
+        
+        for i, label_info in enumerate(time_labels):
+            row = {
+                'period': label_info['label'],
+                'period_index': label_info['index']
+            }
+            
+            for var_name, var_data in variables.items():
+                time_series = var_data.get('time_series', [])
+                if i < len(time_series):
+                    row[var_name] = time_series[i]['value']
+                else:
+                    row[var_name] = 0
+            
+            # Calculate net position if we have generation and grid consumption
+            if 'generation' in row and 'grid_consumption' in row:
+                row['net_position'] = round(row.get('generation', 0) - row.get('grid_consumption', 0), 2)
+            
+            # Calculate self-consumption
+            if 'generation' in row and 'feedin' in row:
+                gen = row.get('generation', 0)
+                feedin = row.get('feedin', 0)
+                if gen > 0:
+                    row['self_consumption'] = round(gen - feedin, 2)
+                    row['self_consumption_ratio'] = round((gen - feedin) / gen * 100, 1)
+                else:
+                    row['self_consumption'] = 0
+                    row['self_consumption_ratio'] = 0
+            
+            table.append(row)
+        
+        return table

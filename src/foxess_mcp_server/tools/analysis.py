@@ -32,8 +32,9 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
                 },
                 "time_range": {
                     "type": "string",
-                    "enum": ["realtime", "1h", "1d", "1w", "1m", "3m", "custom"],
-                    "description": "Time range for analysis"
+                    "enum": ["realtime", "1h", "1d", "1w", "1m", "3m", "custom", 
+                             "report_year", "report_month", "report_day"],
+                    "description": "Time range for analysis. Use report_* for aggregated historical data"
                 },
                 "variables": {
                     "type": "array",
@@ -47,6 +48,18 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
                 "end_time": {
                     "type": "string",
                     "description": "Custom end time (ISO format, required for custom range)"
+                },
+                "year": {
+                    "type": "integer",
+                    "description": "Year for report queries (defaults to current year)"
+                },
+                "month": {
+                    "type": "integer",
+                    "description": "Month for report_month/report_day queries (1-12)"
+                },
+                "day": {
+                    "type": "integer",
+                    "description": "Day for report_day queries (1-31)"
                 }
             },
             "required": ["device_sn", "time_range"]
@@ -67,15 +80,20 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
         if not time_range:
             raise ValidationError("time_range is required")
         
-        start_time = arguments.get('start_time')
-        end_time = arguments.get('end_time')
+        validated['time_range'] = time_range
         
-        time_result = SecurityValidator.validate_time_range(time_range, start_time, end_time)
-        validated['time_range'] = time_result[0]
-        
-        if len(time_result) > 1 and time_result[1] is not None:  # Custom range
-            validated['start_time'] = time_result[0]
-            validated['end_time'] = time_result[1]
+        # Handle report queries
+        if time_range.startswith('report_'):
+            validated['year'] = arguments.get('year', datetime.now().year)
+            validated['month'] = arguments.get('month')
+            validated['day'] = arguments.get('day')
+        elif time_range == 'custom':
+            start_time = arguments.get('start_time')
+            end_time = arguments.get('end_time')
+            time_result = SecurityValidator.validate_time_range(time_range, start_time, end_time)
+            if len(time_result) > 1 and time_result[1] is not None:
+                validated['start_time'] = time_result[0]
+                validated['end_time'] = time_result[1]
         
         # Validate variables
         variables = arguments.get('variables')
@@ -101,6 +119,13 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
         try:
             if time_range == 'realtime':
                 return await self._analyze_realtime_data(device_sn, variables)
+            elif time_range.startswith('report_'):
+                # Handle report queries (aggregated historical data)
+                dimension = time_range.replace('report_', '')  # year, month, day
+                year = arguments.get('year', datetime.now().year)
+                month = arguments.get('month')
+                day = arguments.get('day')
+                return await self._analyze_report_data(device_sn, dimension, year, month, day)
             else:
                 start_time = arguments.get('start_time')
                 end_time = arguments.get('end_time')
@@ -238,6 +263,153 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
             'key_metrics': key_metrics,
             'analysis': analysis
         }
+    
+    async def _analyze_report_data(self, 
+                                   device_sn: str,
+                                   dimension: str,
+                                   year: int,
+                                   month: int = None,
+                                   day: int = None) -> Dict[str, Any]:
+        """
+        Analyze aggregated report data (yearly/monthly/daily summaries)
+        
+        Args:
+            device_sn: Device serial number
+            dimension: Report dimension ('year', 'month', 'day')
+            year: Year for the report
+            month: Month for month/day reports
+            day: Day for day reports
+            
+        Returns:
+            Report analysis results with time series data
+        """
+        # Generate cache key
+        cache_key = self._get_cache_key(
+            f'report_{dimension}',
+            device_sn=device_sn,
+            year=year,
+            month=month or 0,
+            day=day or 0
+        )
+        
+        # Define fetch function
+        async def fetch_report():
+            response = await self._run_async_operation(
+                self.api_client.get_report_data,
+                device_sn=device_sn,
+                year=year,
+                month=month,
+                day=day,
+                dimension=dimension
+            )
+            self._handle_api_response(response, 'report_data')
+            return self.data_processor.process_report_response(
+                response, dimension, year, month, day
+            )
+        
+        # Get cached or fetch fresh data
+        processed_data = await self._get_cached_or_fetch(
+            cache_key,
+            fetch_report,
+            data_type='report'
+        )
+        
+        # Create analysis based on dimension
+        analysis = self._create_report_analysis(processed_data, dimension)
+        
+        return {
+            'analysis_type': f'report_{dimension}',
+            'device_sn': device_sn,
+            'period': {
+                'dimension': dimension,
+                'year': year,
+                'month': month,
+                'day': day
+            },
+            'data': processed_data,
+            'analysis': analysis
+        }
+    
+    def _create_report_analysis(self, data: Dict[str, Any], dimension: str) -> Dict[str, Any]:
+        """Create analysis insights for report data"""
+        variables = data.get('variables', {})
+        totals = data.get('totals', {})
+        summary_table = data.get('summary_table', [])
+        
+        analysis = {
+            'dimension': dimension,
+            'totals': totals,
+            'energy_balance': {},
+            'trends': {},
+            'highlights': []
+        }
+        
+        # Calculate energy balance
+        generation = totals.get('generation', 0)
+        grid_consumption = totals.get('grid_consumption', 0)
+        feedin = totals.get('feedin', 0)
+        
+        if generation > 0:
+            self_consumption = generation - feedin
+            analysis['energy_balance'] = {
+                'total_generation_kwh': generation,
+                'total_feedin_kwh': feedin,
+                'total_grid_consumption_kwh': grid_consumption,
+                'self_consumption_kwh': round(self_consumption, 2),
+                'self_consumption_ratio': round(self_consumption / generation * 100, 1) if generation > 0 else 0,
+                'autarky_ratio': round((generation - feedin) / (generation - feedin + grid_consumption) * 100, 1) if (generation - feedin + grid_consumption) > 0 else 0,
+                'net_position_kwh': round(generation - grid_consumption, 2)
+            }
+        
+        # Find trends and highlights
+        if summary_table:
+            # Find best/worst periods
+            active_periods = [p for p in summary_table if p.get('generation', 0) > 0]
+            
+            if active_periods:
+                best_gen = max(active_periods, key=lambda x: x.get('generation', 0))
+                worst_gen = min(active_periods, key=lambda x: x.get('generation', 0))
+                
+                analysis['highlights'].append({
+                    'type': 'best_generation',
+                    'period': best_gen['period'],
+                    'value': best_gen.get('generation', 0),
+                    'unit': 'kWh'
+                })
+                
+                if best_gen['period'] != worst_gen['period']:
+                    analysis['highlights'].append({
+                        'type': 'lowest_generation',
+                        'period': worst_gen['period'],
+                        'value': worst_gen.get('generation', 0),
+                        'unit': 'kWh'
+                    })
+            
+            # Find highest grid consumption
+            periods_with_grid = [p for p in summary_table if p.get('grid_consumption', 0) > 0]
+            if periods_with_grid:
+                highest_grid = max(periods_with_grid, key=lambda x: x.get('grid_consumption', 0))
+                analysis['highlights'].append({
+                    'type': 'highest_grid_consumption',
+                    'period': highest_grid['period'],
+                    'value': highest_grid.get('grid_consumption', 0),
+                    'unit': 'kWh'
+                })
+            
+            # Calculate trends
+            if len(active_periods) >= 2:
+                gen_values = [p.get('generation', 0) for p in active_periods]
+                first_half_avg = sum(gen_values[:len(gen_values)//2]) / (len(gen_values)//2) if gen_values else 0
+                second_half_avg = sum(gen_values[len(gen_values)//2:]) / (len(gen_values) - len(gen_values)//2) if gen_values else 0
+                
+                if first_half_avg > 0:
+                    trend_pct = (second_half_avg - first_half_avg) / first_half_avg * 100
+                    analysis['trends']['generation_trend'] = {
+                        'direction': 'increasing' if trend_pct > 5 else ('decreasing' if trend_pct < -5 else 'stable'),
+                        'change_percent': round(trend_pct, 1)
+                    }
+        
+        return analysis
     
     def _create_realtime_analysis(self, data: Dict[str, Any], metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Create analysis insights for real-time data"""

@@ -278,34 +278,64 @@ class FoxESSAPIClient:
     
     def get_report_data(self,
                        device_sn: str = None,
-                       report_type: str = 'day',
-                       date: Union[datetime, str] = None) -> Dict[str, Any]:
+                       year: int = None,
+                       month: int = None,
+                       day: int = None,
+                       dimension: str = 'month',
+                       variables: List[str] = None) -> Dict[str, Any]:
         """
         Get report data (daily, monthly, yearly summaries)
         
+        The FoxESS report API uses a dimension-based query:
+        - dimension='year': Returns monthly values for the specified year (12 values)
+        - dimension='month': Returns daily values for the specified month (28-31 values)
+        - dimension='day': Returns hourly values for the specified day (24 values)
+        
         Args:
             device_sn: Device serial number (uses default if None)
-            report_type: Type of report ('day', 'month', 'year')
-            date: Date for the report (uses today if None)
+            year: Year for the report (required)
+            month: Month for the report (required for 'month' and 'day' dimensions)
+            day: Day for the report (required for 'day' dimension)
+            dimension: Data dimension ('year', 'month', 'day')
+            variables: List of variables to retrieve (defaults to energy variables)
             
         Returns:
-            Report data response
+            Report data response with values array for each variable
         """
         sn = device_sn or self.auth.get_device_sn()
         
-        if isinstance(date, datetime):
-            date_timestamp = int(date.timestamp() * 1000)
-        elif isinstance(date, str):
-            date_dt = datetime.fromisoformat(date.replace('Z', '+00:00'))
-            date_timestamp = int(date_dt.timestamp() * 1000)
-        else:
-            date_timestamp = int(datetime.now().timestamp() * 1000)
+        # Default to current date if not specified
+        now = datetime.now()
+        if year is None:
+            year = now.year
         
+        # Build request data based on dimension
         data = {
             'sn': sn,
-            'reportType': report_type,
-            'date': date_timestamp
+            'year': year,
+            'dimension': dimension
         }
+        
+        # Add month/day based on dimension requirements
+        if dimension in ['month', 'day']:
+            if month is None:
+                month = now.month
+            data['month'] = month
+            
+        if dimension == 'day':
+            if day is None:
+                day = now.day
+            data['day'] = day
+        
+        # Default variables for energy reporting
+        if variables is None:
+            variables = [
+                'generation', 'feedin', 'gridConsumption',
+                'chargeEnergyToTal', 'dischargeEnergyToTal'
+            ]
+        data['variables'] = variables
+        
+        self.logger.debug(f"Report query: dimension={dimension}, year={year}, month={month}, day={day}")
         
         return self._make_request('POST', self.endpoints['report_data'], data)
     
