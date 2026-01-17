@@ -52,10 +52,17 @@ Forecast my daily energy yield for the next week and suggest battery optimizatio
 ### Installation
 
 1. **Get your FoxESS API Token**
-   - Visit [foxesscloud.com](https://www.foxesscloud.com)
+   
+   ⚠️ **Important**: API key generation is only available in the **legacy v1 portal**!
+   
+   - Visit the legacy portal: [foxesscloud.com/login](https://www.foxesscloud.com/login)
    - Navigate to Personal Center → API Management
    - Generate your private API token
    - Copy your device serial number
+   
+   > **Note**: The new v2 portal ([foxesscloud.com/v2/login](https://www.foxesscloud.com/v2/login)) does **not** support API key generation. You must use the legacy v1 portal to create your API token.
+   >
+   > For API documentation, see the [Official FoxESS Open API Documentation](https://www.foxesscloud.com/public/i18n/en/OpenApiDocument.html).
 
 2. **Install the MCP Server**
    ```bash
@@ -242,37 +249,24 @@ foxess-mcp-server/
 │   └── utils/                 # Utilities and helpers
 ├── config/                    # Configuration files
 ├── tests/                     # Test suite
-├── docs/                      # Documentation
 └── manifest.json              # MCP extension manifest
 ```
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+Contributions are welcome! Here are some ways you can contribute:
 
-### Ways to Contribute
-
-- 🐛 **Bug Reports**: Report issues and bugs
+- 🐛 **Bug Reports**: Report issues and bugs via [GitHub Issues](https://github.com/holger1411/foxess-mcp-server/issues)
 - 💡 **Feature Requests**: Suggest new features
 - 📝 **Documentation**: Improve docs and examples
-- 🌍 **Translations**: Help with internationalization
 - 🧪 **Testing**: Add tests and improve coverage
 - 💻 **Code**: Submit pull requests
 
-## 📚 Documentation
-
-- **[Installation Guide](docs/INSTALLATION.md)** - Detailed setup instructions
-- **[API Reference](docs/API_REFERENCE.md)** - Complete API documentation  
-- **[Examples](docs/EXAMPLES.md)** - Usage examples and patterns
-- **[Architecture](ARCHITECTURE.md)** - Technical architecture overview
-- **[Security](SECURITY.md)** - Security implementation details
-- **[Testing](TESTING.md)** - Testing strategy and framework
-
 ## 🔗 Links
 
-- **🌐 Website**: [github.com/holger1411/foxess-mcp-server](https://github.com/holger1411/foxess-mcp-server)
+- **🌐 Website**: [holgerkoenemann.com](https://holgerkoenemann.com)
 - **📖 Documentation**: [github.com/holger1411/foxess-mcp-server/wiki](https://github.com/holger1411/foxess-mcp-server/wiki)
-- **💬 Community**: [github.com/holger1411/foxess-mcp-server/discussions](https://github.com/holger1411/foxess-mcp-server/discussions)
+- **📚 FoxESS API Docs**: [FoxESS Open API Documentation](https://www.foxesscloud.com/public/i18n/en/OpenApiDocument.html)
 - **🐛 Bug Reports**: [github.com/holger1411/foxess-mcp-server/issues](https://github.com/holger1411/foxess-mcp-server/issues)
 - **📦 Releases**: [github.com/holger1411/foxess-mcp-server/releases](https://github.com/holger1411/foxess-mcp-server/releases)
 
@@ -288,20 +282,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🆘 Support
 
-### Community Support
-- **GitHub Discussions**: Ask questions and share experiences
-- **GitHub Issues**: Report bugs and request features
-- **Documentation**: Comprehensive guides and examples
+Need help? Here's how to get support:
 
-### Need Help?
-
-1. **Check the [FAQ](docs/FAQ.md)** for common questions
-2. **Search [existing issues](https://github.com/holger1411/foxess-mcp-server/issues)** 
-3. **Join our [community discussions](https://github.com/holger1411/foxess-mcp-server/discussions)**
-4. **Create a [new issue](https://github.com/holger1411/foxess-mcp-server/issues/new)** if needed
+1. **Search [existing issues](https://github.com/holger1411/foxess-mcp-server/issues)** 
+2. **Check the [Wiki](https://github.com/holger1411/foxess-mcp-server/wiki)** for documentation
+3. **Create a [new issue](https://github.com/holger1411/foxess-mcp-server/issues/new)** if needed
 
 ---
 
-**Made with ❤️ by the FoxESS MCP Community**
+**Made with ❤️ for the solar energy community**
 
 *Empowering AI assistants with solar energy intelligence*
