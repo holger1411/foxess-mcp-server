@@ -195,6 +195,37 @@ class SecurityValidator:
                 sanitized['start_time'] = time_result[0]
                 sanitized['end_time'] = time_result[1]
         
+        # Year/Month/Day validation (for report queries)
+        if 'year' in args and args['year'] is not None:
+            year = args['year']
+            if isinstance(year, int) and 2000 <= year <= 2100:
+                sanitized['year'] = year
+            else:
+                raise ValidationError(
+                    "Invalid year. Must be an integer between 2000 and 2100.",
+                    field="year"
+                )
+        
+        if 'month' in args and args['month'] is not None:
+            month = args['month']
+            if isinstance(month, int) and 1 <= month <= 12:
+                sanitized['month'] = month
+            else:
+                raise ValidationError(
+                    "Invalid month. Must be an integer between 1 and 12.",
+                    field="month"
+                )
+        
+        if 'day' in args and args['day'] is not None:
+            day = args['day']
+            if isinstance(day, int) and 1 <= day <= 31:
+                sanitized['day'] = day
+            else:
+                raise ValidationError(
+                    "Invalid day. Must be an integer between 1 and 31.",
+                    field="day"
+                )
+        
         # Variables validation (for analysis tool)
         if 'variables' in args and args['variables']:
             sanitized['variables'] = cls.validate_variables(args['variables'])
