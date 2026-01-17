@@ -5,7 +5,7 @@ Base tool class for FoxESS MCP tools
 import asyncio
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple, Union
 
 from ..utils.errors import FoxESSMCPError, ValidationError
@@ -282,7 +282,8 @@ class TimeRangeMixin:
         Raises:
             ValidationError: If time range is invalid
         """
-        now = datetime.utcnow()
+        # Use timezone-aware UTC datetime
+        now = datetime.now(timezone.utc)
         
         if time_range == 'realtime':
             return 'realtime', 'realtime'
@@ -313,14 +314,23 @@ class TimeRangeMixin:
             
             try:
                 if isinstance(start_time, str):
-                    start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                    # Handle various datetime formats
+                    if 'Z' in start_time or '+' in start_time or '-' in start_time[10:]:
+                        # Already has timezone info
+                        start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                    else:
+                        # Naive datetime - assume UTC
+                        start_dt = datetime.fromisoformat(start_time).replace(tzinfo=timezone.utc)
                 else:
-                    start_dt = start_time
+                    start_dt = start_time if start_time.tzinfo else start_time.replace(tzinfo=timezone.utc)
                 
                 if isinstance(end_time, str):
-                    end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+                    if 'Z' in end_time or '+' in end_time or '-' in end_time[10:]:
+                        end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+                    else:
+                        end_dt = datetime.fromisoformat(end_time).replace(tzinfo=timezone.utc)
                 else:
-                    end_dt = end_time
+                    end_dt = end_time if end_time.tzinfo else end_time.replace(tzinfo=timezone.utc)
                 
                 if end_dt <= start_dt:
                     raise ValidationError("End time must be after start time")

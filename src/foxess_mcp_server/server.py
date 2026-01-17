@@ -61,7 +61,7 @@ class FoxESSMCPServer:
                         "properties": {
                             "device_sn": {
                                 "type": "string",
-                                "description": "FoxESS device serial number"
+                                "description": "FoxESS device serial number (optional - uses configured default if not provided)"
                             },
                             "time_range": {
                                 "type": "string",
@@ -95,7 +95,7 @@ class FoxESSMCPServer:
                                 "description": "Day (1-31) for report_day queries"
                             }
                         },
-                        "required": ["device_sn", "time_range"]
+                        "required": ["time_range"]
                     }
                 ),
                 Tool(
@@ -106,7 +106,7 @@ class FoxESSMCPServer:
                         "properties": {
                             "device_sn": {
                                 "type": "string",
-                                "description": "FoxESS device serial number"
+                                "description": "FoxESS device serial number (optional - uses configured default if not provided)"
                             },
                             "check_type": {
                                 "type": "string",
@@ -119,7 +119,7 @@ class FoxESSMCPServer:
                                 "description": "Include optimization recommendations"
                             }
                         },
-                        "required": ["device_sn", "check_type"]
+                        "required": ["check_type"]
                     }
                 ),
                 Tool(
@@ -130,7 +130,7 @@ class FoxESSMCPServer:
                         "properties": {
                             "device_sn": {
                                 "type": "string",
-                                "description": "FoxESS device serial number"
+                                "description": "FoxESS device serial number (optional - uses configured default if not provided)"
                             },
                             "forecast_type": {
                                 "type": "string",
@@ -148,7 +148,7 @@ class FoxESSMCPServer:
                                 "description": "Optimization objective"
                             }
                         },
-                        "required": ["device_sn", "forecast_type"]
+                        "required": ["forecast_type"]
                     }
                 )
             ]
@@ -158,6 +158,10 @@ class FoxESSMCPServer:
             """Handle tool execution requests"""
             try:
                 self.logger.info(f"Tool called: {name}")
+                
+                # Use default device_sn from API client if not provided
+                if 'device_sn' not in arguments or not arguments.get('device_sn'):
+                    arguments['device_sn'] = self.api_client.auth.get_device_sn()
                 
                 # Validate and sanitize arguments
                 sanitized_args = SecurityValidator.sanitize_arguments(arguments)

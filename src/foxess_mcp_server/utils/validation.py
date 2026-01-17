@@ -42,7 +42,10 @@ class SecurityValidator:
     }
     
     # Allowed time ranges
-    ALLOWED_TIME_RANGES = {'realtime', '1h', '1d', '1w', '1m', '3m', 'custom'}
+    ALLOWED_TIME_RANGES = {
+        'realtime', '1h', '1d', '1w', '1m', '3m', 'custom',
+        'report_year', 'report_month', 'report_day'
+    }
     
     # Allowed check types for diagnosis
     ALLOWED_CHECK_TYPES = {'health', 'performance', 'errors', 'comprehensive'}
