@@ -186,10 +186,12 @@ class FoxESSMCPServer:
                 
             except Exception as e:
                 self.logger.error(f"Tool execution failed: {e}")
+                # Sanitize error message to prevent sensitive data leakage
+                safe_message = SecurityValidator.sanitize_error_message(str(e))
                 error_response = {
                     "error": {
                         "code": "TOOL_EXECUTION_ERROR", 
-                        "message": str(e),
+                        "message": safe_message,
                         "tool": name,
                         "timestamp": self._get_timestamp()
                     }

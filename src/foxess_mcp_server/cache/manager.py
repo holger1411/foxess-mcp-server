@@ -1,10 +1,17 @@
 """
 Cache management for FoxESS MCP Server
+
+Security features:
+- Encrypted disk cache using Fernet symmetric encryption
+- Restrictive file permissions (owner-only access)
+- Secure key derivation from environment or auto-generated
 """
 
+import base64
 import hashlib
 import json
 import os
+import stat
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
@@ -12,14 +19,78 @@ import tempfile
 from cachetools import TTLCache
 from ..utils.logging_config import get_logger, log_cache_operation
 
+# Optional encryption support
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    ENCRYPTION_AVAILABLE = True
+except ImportError:
+    ENCRYPTION_AVAILABLE = False
+    InvalidToken = Exception  # Fallback for type hints
+
+
+class CacheEncryption:
+    """Handles encryption/decryption of cache data"""
+    
+    def __init__(self, encryption_key: bytes = None):
+        """
+        Initialize cache encryption
+        
+        Args:
+            encryption_key: Optional 32-byte key. If not provided, derives from
+                           FOXESS_CACHE_KEY env var or generates a session key.
+        """
+        if not ENCRYPTION_AVAILABLE:
+            raise ImportError(
+                "cryptography package required for cache encryption. "
+                "Install with: pip install cryptography"
+            )
+        
+        self.cipher = Fernet(self._get_or_create_key(encryption_key))
+    
+    def _get_or_create_key(self, provided_key: bytes = None) -> bytes:
+        """Get or create encryption key"""
+        if provided_key:
+            return base64.urlsafe_b64encode(provided_key[:32].ljust(32, b'\0'))
+        
+        # Try to get from environment
+        env_key = os.getenv('FOXESS_CACHE_KEY')
+        if env_key:
+            # Derive key from passphrase using PBKDF2
+            salt = b'foxess_mcp_cache_salt_v1'  # Static salt for deterministic key
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=salt,
+                iterations=100000,
+            )
+            key = base64.urlsafe_b64encode(kdf.derive(env_key.encode()))
+            return key
+        
+        # Generate session key (cache won't persist across restarts)
+        return Fernet.generate_key()
+    
+    def encrypt(self, data: bytes) -> bytes:
+        """Encrypt data"""
+        return self.cipher.encrypt(data)
+    
+    def decrypt(self, encrypted_data: bytes) -> bytes:
+        """Decrypt data"""
+        return self.cipher.decrypt(encrypted_data)
+
 
 class CacheManager:
-    """Multi-level cache manager for FoxESS data"""
+    """Multi-level cache manager for FoxESS data with security features"""
+    
+    # Maximum cache file size to prevent DoS (10 MB)
+    MAX_CACHE_FILE_SIZE = 10 * 1024 * 1024
     
     def __init__(self, 
                  memory_cache_size: int = 1000,
                  disk_cache_dir: str = None,
-                 default_ttl: int = 300):  # 5 minutes
+                 default_ttl: int = 300,
+                 enable_encryption: bool = True):
         """
         Initialize cache manager
         
@@ -27,21 +98,38 @@ class CacheManager:
             memory_cache_size: Maximum number of items in memory cache
             disk_cache_dir: Directory for disk cache (uses temp if None)
             default_ttl: Default TTL in seconds
+            enable_encryption: Enable disk cache encryption (requires cryptography)
         """
         self.logger = get_logger(__name__)
         self.default_ttl = default_ttl
+        self.enable_encryption = enable_encryption and ENCRYPTION_AVAILABLE
+        
+        # Initialize encryption if enabled
+        self.encryption = None
+        if self.enable_encryption:
+            try:
+                self.encryption = CacheEncryption()
+                self.logger.info("Cache encryption enabled")
+            except Exception as e:
+                self.logger.warning(f"Cache encryption unavailable: {e}")
+                self.enable_encryption = False
+        elif enable_encryption and not ENCRYPTION_AVAILABLE:
+            self.logger.warning(
+                "Cache encryption requested but cryptography package not installed. "
+                "Install with: pip install cryptography"
+            )
         
         # Memory cache using TTLCache
         self.memory_cache = TTLCache(maxsize=memory_cache_size, ttl=default_ttl)
         
-        # Disk cache directory
+        # Disk cache directory with secure setup
         if disk_cache_dir:
             self.disk_cache_dir = disk_cache_dir
         else:
             self.disk_cache_dir = os.path.join(tempfile.gettempdir(), 'foxess_mcp_cache')
         
-        # Ensure cache directory exists
-        os.makedirs(self.disk_cache_dir, exist_ok=True)
+        # Ensure cache directory exists with secure permissions
+        self._setup_secure_cache_directory()
         
         # Cache TTL configurations for different data types
         self.ttl_config = {
@@ -52,7 +140,32 @@ class CacheManager:
             'device_info': 86400  # 24 hours
         }
         
-        self.logger.info(f"Cache manager initialized - Memory: {memory_cache_size}, Disk: {self.disk_cache_dir}")
+        self.logger.info(
+            f"Cache manager initialized - Memory: {memory_cache_size}, "
+            f"Disk: {self.disk_cache_dir}, Encrypted: {self.enable_encryption}"
+        )
+    
+    def _setup_secure_cache_directory(self):
+        """Create cache directory with restrictive permissions"""
+        try:
+            os.makedirs(self.disk_cache_dir, exist_ok=True)
+            
+            # Set restrictive permissions: owner read/write/execute only (0o700)
+            os.chmod(self.disk_cache_dir, stat.S_IRWXU)
+            
+            self.logger.debug(f"Cache directory secured: {self.disk_cache_dir}")
+            
+        except OSError as e:
+            self.logger.error(f"Failed to setup secure cache directory: {e}")
+            raise
+    
+    def _set_secure_file_permissions(self, filepath: str):
+        """Set restrictive permissions on cache files"""
+        try:
+            # Owner read/write only (0o600)
+            os.chmod(filepath, stat.S_IRUSR | stat.S_IWUSR)
+        except OSError as e:
+            self.logger.warning(f"Failed to set file permissions on {filepath}: {e}")
     
     def get(self, cache_key: str, data_type: str = 'default') -> Optional[Any]:
         """
@@ -111,7 +224,7 @@ class CacheManager:
             # Store in memory cache
             self.memory_cache[cache_key] = data
             
-            # Store in disk cache for persistence
+            # Store in disk cache for persistence (encrypted if enabled)
             self._set_to_disk(cache_key, data, ttl)
             
             return True
@@ -193,7 +306,7 @@ class CacheManager:
                     
                     try:
                         # Check if file is expired based on modification time and TTL
-                        stat = os.stat(filepath)
+                        file_stat = os.stat(filepath)
                         
                         # Try to read TTL from metadata file
                         meta_filepath = filepath + '.meta'
@@ -208,7 +321,7 @@ class CacheManager:
                                 pass
                         
                         # Check if expired
-                        if current_time - stat.st_mtime > ttl:
+                        if current_time - file_stat.st_mtime > ttl:
                             os.remove(filepath)
                             if os.path.exists(meta_filepath):
                                 os.remove(meta_filepath)
@@ -245,9 +358,9 @@ class CacheManager:
                     if filename.endswith('.cache'):
                         filepath = os.path.join(self.disk_cache_dir, filename)
                         try:
-                            stat = os.stat(filepath)
+                            file_stat = os.stat(filepath)
                             disk_size += 1
-                            disk_total_size += stat.st_size
+                            disk_total_size += file_stat.st_size
                         except OSError:
                             pass
             except OSError:
@@ -262,7 +375,8 @@ class CacheManager:
             'disk_cache': {
                 'entries': disk_size,
                 'total_size_bytes': disk_total_size,
-                'directory': self.disk_cache_dir
+                'directory': self.disk_cache_dir,
+                'encrypted': self.enable_encryption
             },
             'ttl_config': self.ttl_config
         }
@@ -291,12 +405,12 @@ class CacheManager:
         
         # Join and hash for reasonable key length
         key_string = "|".join(str(p) for p in key_parts)
-        key_hash = hashlib.md5(key_string.encode()).hexdigest()
+        key_hash = hashlib.sha256(key_string.encode()).hexdigest()[:32]
         
         return f"foxess:{operation}:{key_hash}"
     
     def _get_from_disk(self, cache_key: str, data_type: str) -> Optional[Any]:
-        """Get data from disk cache"""
+        """Get data from disk cache (with decryption if enabled)"""
         cache_file = self._get_cache_filepath(cache_key)
         meta_file = cache_file + '.meta'
         
@@ -304,6 +418,13 @@ class CacheManager:
             return None
         
         try:
+            # Check file size before reading
+            file_stat = os.stat(cache_file)
+            if file_stat.st_size > self.MAX_CACHE_FILE_SIZE:
+                self.logger.warning(f"Cache file too large, deleting: {cache_file}")
+                self._delete_from_disk(cache_key)
+                return None
+            
             # Check TTL from metadata
             ttl = self.ttl_config.get(data_type, self.default_ttl)
             
@@ -320,20 +441,29 @@ class CacheManager:
                             return None
                 except (json.JSONDecodeError, IOError):
                     # If metadata is corrupted, use file mtime
-                    stat = os.stat(cache_file)
-                    if time.time() - stat.st_mtime > ttl:
+                    if time.time() - file_stat.st_mtime > ttl:
                         self._delete_from_disk(cache_key)
                         return None
             else:
                 # No metadata, use file mtime
-                stat = os.stat(cache_file)
-                if time.time() - stat.st_mtime > ttl:
+                if time.time() - file_stat.st_mtime > ttl:
                     self._delete_from_disk(cache_key)
                     return None
             
-            # Read cached data
-            with open(cache_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            # Read cached data (encrypted or plain)
+            if self.enable_encryption and self.encryption:
+                with open(cache_file, 'rb') as f:
+                    encrypted_data = f.read()
+                try:
+                    decrypted_data = self.encryption.decrypt(encrypted_data)
+                    return json.loads(decrypted_data.decode('utf-8'))
+                except InvalidToken:
+                    self.logger.warning(f"Failed to decrypt cache file (key changed?): {cache_file}")
+                    self._delete_from_disk(cache_key)
+                    return None
+            else:
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
                 
         except (json.JSONDecodeError, IOError) as e:
             self.logger.warning(f"Failed to read cache file {cache_file}: {e}")
@@ -341,25 +471,45 @@ class CacheManager:
             return None
     
     def _set_to_disk(self, cache_key: str, data: Any, ttl: int):
-        """Store data to disk cache"""
+        """Store data to disk cache (with encryption if enabled)"""
         cache_file = self._get_cache_filepath(cache_key)
         meta_file = cache_file + '.meta'
         
         try:
-            # Write data file
-            with open(cache_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
+            # Serialize data
+            json_data = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+            
+            # Check size before writing
+            if len(json_data) > self.MAX_CACHE_FILE_SIZE:
+                self.logger.warning(f"Data too large to cache: {len(json_data)} bytes")
+                return
+            
+            # Write data file (encrypted or plain)
+            if self.enable_encryption and self.encryption:
+                encrypted_data = self.encryption.encrypt(json_data.encode('utf-8'))
+                with open(cache_file, 'wb') as f:
+                    f.write(encrypted_data)
+            else:
+                with open(cache_file, 'w', encoding='utf-8') as f:
+                    f.write(json_data)
+            
+            # Set secure file permissions
+            self._set_secure_file_permissions(cache_file)
             
             # Write metadata
             metadata = {
                 'created': time.time(),
                 'ttl': ttl,
                 'data_type': 'json',
-                'cache_key': cache_key
+                'cache_key': cache_key,
+                'encrypted': self.enable_encryption
             }
             
             with open(meta_file, 'w', encoding='utf-8') as f:
                 json.dump(metadata, f)
+            
+            # Set secure permissions on metadata too
+            self._set_secure_file_permissions(meta_file)
                 
         except (IOError, TypeError) as e:
             self.logger.error(f"Failed to write cache file {cache_file}: {e}")
@@ -410,13 +560,17 @@ class CacheManager:
     
     def _get_cache_filepath(self, cache_key: str) -> str:
         """Get cache file path for a cache key"""
-        # Use hash of cache key as filename to avoid filesystem issues
-        key_hash = hashlib.md5(cache_key.encode()).hexdigest()
+        # Use SHA-256 hash of cache key as filename for better security
+        key_hash = hashlib.sha256(cache_key.encode()).hexdigest()
         return os.path.join(self.disk_cache_dir, f"{key_hash}.cache")
 
 
 class CacheStrategy:
     """Cache strategy helper for different data types"""
+    
+    def __init__(self, cache_manager: CacheManager = None):
+        """Initialize with optional cache manager"""
+        self.cache_manager = cache_manager
     
     @staticmethod
     def get_realtime_cache_key(device_sn: str, variables: list = None) -> str:
@@ -446,10 +600,10 @@ class CacheStrategy:
         
         var_key = ",".join(sorted(variables)) if variables else "all"
         
-        # Create hash for long keys
+        # Create hash for long keys using SHA-256
         key_parts = [device_sn, start_str, end_str, var_key, dimension]
         key_string = "|".join(key_parts)
-        key_hash = hashlib.md5(key_string.encode()).hexdigest()
+        key_hash = hashlib.sha256(key_string.encode()).hexdigest()[:32]
         
         return f"historical:{device_sn}:{key_hash}"
     

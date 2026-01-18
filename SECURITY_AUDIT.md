@@ -363,14 +363,14 @@ Document recommended HTTP headers for deployments behind reverse proxies:
 
 ## Remediation Priority
 
-| Priority | Finding | Effort | Impact |
-|----------|---------|--------|--------|
-| 1 | H2: Encrypt disk cache | Medium | High |
-| 2 | M3: Secure cache directory permissions | Low | Medium |
-| 3 | M4: Sanitize error messages | Low | Medium |
-| 4 | M5: Add response size limits | Low | Medium |
-| 5 | M1: Enforce HTTPS only | Low | Medium |
-| 6 | M2: Persistent rate limiting | Medium | Low |
+| Priority | Finding | Effort | Impact | Status |
+|----------|---------|--------|--------|--------|
+| 1 | H2: Encrypt disk cache | Medium | High | ✅ FIXED |
+| 2 | M3: Secure cache directory permissions | Low | Medium | ✅ FIXED |
+| 3 | M4: Sanitize error messages | Low | Medium | ✅ FIXED |
+| 4 | M5: Add response size limits | Low | Medium | ✅ FIXED |
+| 5 | M1: Enforce HTTPS only | Low | Medium | |
+| 6 | M2: Persistent rate limiting | Medium | Low | |
 
 ---
 

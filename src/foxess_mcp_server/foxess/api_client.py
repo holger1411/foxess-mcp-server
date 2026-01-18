@@ -18,6 +18,9 @@ from .auth import TokenManager, RateLimiter
 class FoxESSAPIClient:
     """Client for FoxESS Cloud API"""
     
+    # Maximum response size to prevent DoS (10 MB)
+    MAX_RESPONSE_SIZE = 10 * 1024 * 1024
+    
     def __init__(self, 
                  token: str = None, 
                  device_sn: str = None,
@@ -141,6 +144,13 @@ class FoxESSAPIClient:
             duration = time.time() - start_time
             log_api_response(self.logger, response.status_code, len(response.content))
             
+            # Check response size to prevent DoS
+            if len(response.content) > self.MAX_RESPONSE_SIZE:
+                raise APIError(
+                    f"Response too large: {len(response.content)} bytes (max: {self.MAX_RESPONSE_SIZE})",
+                    status_code=413
+                )
+            
             # Handle HTTP errors
             if response.status_code == 401:
                 raise APIError("Authentication failed. Check your API token.", 401)
@@ -154,8 +164,8 @@ class FoxESSAPIClient:
             # Parse JSON response
             try:
                 result = response.json()
-            except json.JSONDecodeError as e:
-                raise APIError(f"Invalid JSON response: {e}")
+            except json.JSONDecodeError:
+                raise APIError("Invalid JSON response from API")
             
             # Check FoxESS API error codes
             if result.get('errno', 0) != 0:

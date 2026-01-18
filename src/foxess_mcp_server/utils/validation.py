@@ -289,3 +289,50 @@ class SecurityValidator:
         if device_sn:
             sanitized = cls.sanitize_device_sn_in_text(sanitized, device_sn)
         return sanitized
+    
+    @classmethod
+    def sanitize_error_message(cls, message: str) -> str:
+        """
+        Sanitize error messages for safe external exposure.
+        
+        Removes sensitive data that could be leaked through error responses:
+        - API tokens
+        - File paths
+        - Stack traces
+        - Device serial numbers
+        
+        Args:
+            message: Raw error message
+            
+        Returns:
+            Sanitized error message safe for client exposure
+        """
+        if not isinstance(message, str):
+            message = str(message)
+        
+        # Remove tokens
+        sanitized = cls.sanitize_token_in_text(message)
+        
+        # Remove file paths (Unix and Windows)
+        # Unix paths: /home/user/file.py, /tmp/cache/data
+        sanitized = re.sub(r'/[a-zA-Z0-9_./\-]+(?:\.[a-zA-Z0-9]+)?', '[PATH]', sanitized)
+        # Windows paths: C:\Users\name\file.py
+        sanitized = re.sub(r'[A-Za-z]:\\[a-zA-Z0-9_\\.\-]+', '[PATH]', sanitized)
+        
+        # Remove stack trace references
+        sanitized = re.sub(r'File "[^"]+", line \d+', '[LOCATION]', sanitized)
+        sanitized = re.sub(r'line \d+ in \w+', '[LOCATION]', sanitized)
+        
+        # Remove potential memory addresses
+        sanitized = re.sub(r'0x[0-9a-fA-F]+', '[ADDR]', sanitized)
+        
+        # Remove device serial numbers (10-20 alphanumeric)
+        # Be careful not to remove normal words - only match patterns that look like SNs
+        sanitized = re.sub(r'\b[A-Z][A-Z0-9]{9,19}\b', '[DEVICE_SN]', sanitized)
+        
+        # Limit message length to prevent information overflow
+        max_length = 500
+        if len(sanitized) > max_length:
+            sanitized = sanitized[:max_length] + '... [truncated]'
+        
+        return sanitized
