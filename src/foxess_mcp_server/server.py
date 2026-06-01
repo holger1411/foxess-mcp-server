@@ -19,6 +19,8 @@ from mcp.server.stdio import stdio_server
 from mcp.types import (
     Tool,
     TextContent,
+    ToolAnnotations,
+    CallToolResult,
 )
 
 # Local imports
@@ -46,112 +48,141 @@ class FoxESSMCPServer:
         # Initialize tools
         self._initialize_tools()
     
+    @staticmethod
+    def _build_tool_definitions() -> "list[Tool]":
+        """Static tool definitions (incl. outputSchema + annotations) — unit-testable."""
+        return [
+            Tool(
+                name="foxess_analysis",
+                description="Analyze FoxESS solar inverter data with real-time, historical, and aggregated report insights",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "device_sn": {
+                            "type": "string",
+                            "description": "FoxESS device serial number (optional - uses configured default if not provided)"
+                        },
+                        "time_range": {
+                            "type": "string",
+                            "enum": ["realtime", "1h", "1d", "1w", "1m", "3m", "custom",
+                                     "report_year", "report_month", "report_day"],
+                            "description": "Time range for analysis. Use report_year for monthly breakdown of a year, report_month for daily breakdown of a month, report_day for hourly breakdown of a day"
+                        },
+                        "variables": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Energy variables to analyze (optional)"
+                        },
+                        "start_time": {
+                            "type": "string",
+                            "description": "Custom start time (ISO format, required for custom range)"
+                        },
+                        "end_time": {
+                            "type": "string",
+                            "description": "Custom end time (ISO format, required for custom range)"
+                        },
+                        "year": {
+                            "type": "integer",
+                            "description": "Year for report queries (defaults to current year)"
+                        },
+                        "month": {
+                            "type": "integer",
+                            "description": "Month (1-12) for report_month/report_day queries"
+                        },
+                        "day": {
+                            "type": "integer",
+                            "description": "Day (1-31) for report_day queries"
+                        }
+                    },
+                    "required": ["time_range"]
+                },
+                outputSchema={"type": "object"},
+                annotations=ToolAnnotations(
+                    title="FoxESS Analysis",
+                    readOnlyHint=True,
+                    destructiveHint=False,
+                    idempotentHint=False,
+                    openWorldHint=True,
+                ),
+            ),
+            Tool(
+                name="foxess_diagnosis",
+                description="Diagnose FoxESS system health and performance issues",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "device_sn": {
+                            "type": "string",
+                            "description": "FoxESS device serial number (optional - uses configured default if not provided)"
+                        },
+                        "check_type": {
+                            "type": "string",
+                            "enum": ["health", "performance", "errors", "comprehensive"],
+                            "description": "Type of diagnostic check"
+                        },
+                        "include_recommendations": {
+                            "type": "boolean",
+                            "default": True,
+                            "description": "Include optimization recommendations"
+                        }
+                    },
+                    "required": ["check_type"]
+                },
+                outputSchema={"type": "object"},
+                annotations=ToolAnnotations(
+                    title="FoxESS Diagnosis",
+                    readOnlyHint=True,
+                    destructiveHint=False,
+                    idempotentHint=False,
+                    openWorldHint=True,
+                ),
+            ),
+            Tool(
+                name="foxess_forecast",
+                description="Generate FoxESS energy forecasts and optimization recommendations",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "device_sn": {
+                            "type": "string",
+                            "description": "FoxESS device serial number (optional - uses configured default if not provided)"
+                        },
+                        "forecast_type": {
+                            "type": "string",
+                            "enum": ["daily", "weekly", "monthly"],
+                            "description": "Forecast time horizon"
+                        },
+                        "weather_integration": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Include weather data in forecast"
+                        },
+                        "optimization_focus": {
+                            "type": "string",
+                            "enum": ["yield", "cost", "battery_life", "grid_stability"],
+                            "description": "Optimization objective"
+                        }
+                    },
+                    "required": ["forecast_type"]
+                },
+                outputSchema={"type": "object"},
+                annotations=ToolAnnotations(
+                    title="FoxESS Forecast",
+                    readOnlyHint=True,
+                    destructiveHint=False,
+                    idempotentHint=False,
+                    openWorldHint=True,
+                ),
+            ),
+        ]
+
     def _setup_handlers(self):
         """Setup MCP server event handlers"""
-        
+
         @self.server.list_tools()
         async def list_tools() -> List[Tool]:
             """List available tools"""
-            return [
-                Tool(
-                    name="foxess_analysis",
-                    description="Analyze FoxESS solar inverter data with real-time, historical, and aggregated report insights",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "device_sn": {
-                                "type": "string",
-                                "description": "FoxESS device serial number (optional - uses configured default if not provided)"
-                            },
-                            "time_range": {
-                                "type": "string",
-                                "enum": ["realtime", "1h", "1d", "1w", "1m", "3m", "custom",
-                                         "report_year", "report_month", "report_day"],
-                                "description": "Time range for analysis. Use report_year for monthly breakdown of a year, report_month for daily breakdown of a month, report_day for hourly breakdown of a day"
-                            },
-                            "variables": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "Energy variables to analyze (optional)"
-                            },
-                            "start_time": {
-                                "type": "string",
-                                "description": "Custom start time (ISO format, required for custom range)"
-                            },
-                            "end_time": {
-                                "type": "string",
-                                "description": "Custom end time (ISO format, required for custom range)"
-                            },
-                            "year": {
-                                "type": "integer",
-                                "description": "Year for report queries (defaults to current year)"
-                            },
-                            "month": {
-                                "type": "integer",
-                                "description": "Month (1-12) for report_month/report_day queries"
-                            },
-                            "day": {
-                                "type": "integer",
-                                "description": "Day (1-31) for report_day queries"
-                            }
-                        },
-                        "required": ["time_range"]
-                    }
-                ),
-                Tool(
-                    name="foxess_diagnosis",
-                    description="Diagnose FoxESS system health and performance issues",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "device_sn": {
-                                "type": "string",
-                                "description": "FoxESS device serial number (optional - uses configured default if not provided)"
-                            },
-                            "check_type": {
-                                "type": "string",
-                                "enum": ["health", "performance", "errors", "comprehensive"],
-                                "description": "Type of diagnostic check"
-                            },
-                            "include_recommendations": {
-                                "type": "boolean",
-                                "default": True,
-                                "description": "Include optimization recommendations"
-                            }
-                        },
-                        "required": ["check_type"]
-                    }
-                ),
-                Tool(
-                    name="foxess_forecast",
-                    description="Generate FoxESS energy forecasts and optimization recommendations",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "device_sn": {
-                                "type": "string",
-                                "description": "FoxESS device serial number (optional - uses configured default if not provided)"
-                            },
-                            "forecast_type": {
-                                "type": "string",
-                                "enum": ["daily", "weekly", "monthly"],
-                                "description": "Forecast time horizon"
-                            },
-                            "weather_integration": {
-                                "type": "boolean",
-                                "default": False,
-                                "description": "Include weather data in forecast"
-                            },
-                            "optimization_focus": {
-                                "type": "string",
-                                "enum": ["yield", "cost", "battery_life", "grid_stability"],
-                                "description": "Optimization objective"
-                            }
-                        },
-                        "required": ["forecast_type"]
-                    }
-                )
-            ]
+            return FoxESSMCPServer._build_tool_definitions()
         
         @self.server.call_tool()
         async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
