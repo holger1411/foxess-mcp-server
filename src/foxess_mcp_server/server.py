@@ -176,6 +176,47 @@ class FoxESSMCPServer:
             ),
         ]
 
+    async def _run_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Route a tool call to the matching tool. Raises ValueError for unknown names."""
+        if name == "foxess_analysis":
+            return await self.tools["analysis"].execute(arguments)
+        elif name == "foxess_diagnosis":
+            return await self.tools["diagnosis"].execute(arguments)
+        elif name == "foxess_forecast":
+            return await self.tools["forecast"].execute(arguments)
+        raise ValueError(f"Unknown tool: {name}")
+
+    async def _handle_tool_call(self, name: str, arguments: Dict[str, Any]):
+        """Inject default device_sn, sanitize, dispatch. Returns the result dict
+        (-> structuredContent) on success, or a CallToolResult(isError=True) on failure."""
+        try:
+            self.logger.info(f"Tool called: {name}")
+
+            # Use default device_sn from API client if not provided
+            if 'device_sn' not in arguments or not arguments.get('device_sn'):
+                arguments['device_sn'] = self.api_client.auth.get_device_sn()
+
+            # Validate and sanitize arguments (security boundary)
+            sanitized_args = SecurityValidator.sanitize_arguments(arguments)
+
+            return await self._run_tool(name, sanitized_args)
+
+        except Exception as e:
+            self.logger.error(f"Tool execution failed: {e}")
+            safe_message = SecurityValidator.sanitize_error_message(str(e))
+            error_response = {
+                "error": {
+                    "code": "TOOL_EXECUTION_ERROR",
+                    "message": safe_message,
+                    "tool": name,
+                    "timestamp": self._get_timestamp(),
+                }
+            }
+            return CallToolResult(
+                isError=True,
+                content=[TextContent(type="text", text=json.dumps(error_response, indent=2))],
+            )
+
     def _setup_handlers(self):
         """Setup MCP server event handlers"""
 
@@ -183,54 +224,11 @@ class FoxESSMCPServer:
         async def list_tools() -> List[Tool]:
             """List available tools"""
             return FoxESSMCPServer._build_tool_definitions()
-        
+
         @self.server.call_tool()
-        async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
-            """Handle tool execution requests"""
-            try:
-                self.logger.info(f"Tool called: {name}")
-                
-                # Use default device_sn from API client if not provided
-                if 'device_sn' not in arguments or not arguments.get('device_sn'):
-                    arguments['device_sn'] = self.api_client.auth.get_device_sn()
-                
-                # Validate and sanitize arguments
-                sanitized_args = SecurityValidator.sanitize_arguments(arguments)
-                
-                # Route to appropriate tool
-                if name == "foxess_analysis":
-                    result = await self.tools["analysis"].execute(sanitized_args)
-                elif name == "foxess_diagnosis":
-                    result = await self.tools["diagnosis"].execute(sanitized_args)
-                elif name == "foxess_forecast":
-                    result = await self.tools["forecast"].execute(sanitized_args)
-                else:
-                    raise ValueError(f"Unknown tool: {name}")
-                
-                # Format response
-                response_text = json.dumps(result, indent=2, ensure_ascii=False)
-                
-                return [TextContent(
-                    type="text",
-                    text=response_text
-                )]
-                
-            except Exception as e:
-                self.logger.error(f"Tool execution failed: {e}")
-                # Sanitize error message to prevent sensitive data leakage
-                safe_message = SecurityValidator.sanitize_error_message(str(e))
-                error_response = {
-                    "error": {
-                        "code": "TOOL_EXECUTION_ERROR", 
-                        "message": safe_message,
-                        "tool": name,
-                        "timestamp": self._get_timestamp()
-                    }
-                }
-                return [TextContent(
-                    type="text",
-                    text=json.dumps(error_response, indent=2)
-                )]
+        async def call_tool(name: str, arguments: Dict[str, Any]):
+            """Handle tool execution requests (structured output)."""
+            return await self._handle_tool_call(name, arguments)
     
     def _initialize_tools(self):
         """Initialize tool instances"""
