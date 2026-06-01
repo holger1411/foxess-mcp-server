@@ -186,18 +186,19 @@ class FoxESSMCPServer:
             return await self.tools["forecast"].execute(arguments)
         raise ValueError(f"Unknown tool: {name}")
 
-    async def _handle_tool_call(self, name: str, arguments: Dict[str, Any]):
+    async def _handle_tool_call(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any] | CallToolResult:
         """Inject default device_sn, sanitize, dispatch. Returns the result dict
         (-> structuredContent) on success, or a CallToolResult(isError=True) on failure."""
         try:
             self.logger.info(f"Tool called: {name}")
 
-            # Use default device_sn from API client if not provided
-            if 'device_sn' not in arguments or not arguments.get('device_sn'):
-                arguments['device_sn'] = self.api_client.auth.get_device_sn()
+            # Work on a copy — don't mutate the caller's arguments dict
+            args = dict(arguments)
+            if 'device_sn' not in args or not args.get('device_sn'):
+                args['device_sn'] = self.api_client.auth.get_device_sn()
 
             # Validate and sanitize arguments (security boundary)
-            sanitized_args = SecurityValidator.sanitize_arguments(arguments)
+            sanitized_args = SecurityValidator.sanitize_arguments(args)
 
             return await self._run_tool(name, sanitized_args)
 
