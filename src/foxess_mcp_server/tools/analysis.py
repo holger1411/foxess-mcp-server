@@ -15,7 +15,21 @@ from .base import BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingMi
 
 class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingMixin):
     """Tool for analyzing FoxESS solar inverter data"""
-    
+
+    # Maps raw FoxESS cumulative counters to the exact daily output field names.
+    _EXACT_FIELD_BY_COUNTER = {
+        'PVEnergyTotal': 'pv_generation_today_kwh',
+        'feedin': 'feedin_today_kwh',
+        'gridConsumption': 'grid_consumption_today_kwh',
+        'chargeEnergyToTal': 'charge_today_kwh',
+        'dischargeEnergyToTal': 'discharge_today_kwh',
+    }
+    # The exact daily fields, in output order.
+    _EXACT_DAILY_FIELDS = (
+        'pv_generation_today_kwh', 'feedin_today_kwh', 'grid_consumption_today_kwh',
+        'charge_today_kwh', 'discharge_today_kwh',
+    )
+
     def __init__(self, api_client, cache_manager=None):
         super().__init__(api_client, cache_manager)
         self.data_processor = DataProcessor()
@@ -180,8 +194,8 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
         # Fill today_generation with the EXACT PV day value (PVEnergyTotal delta)
         # instead of the unreliable todayYield (often 0). Falls back silently.
         now = datetime.now()
-        exact = await self._fetch_exact_daily_pv(device_sn, now.year, now.month, now.day)
-        if exact:
+        exact = await self._fetch_exact_daily_energy(device_sn, now.year, now.month, now.day)
+        if exact and 'pv_generation_today_kwh' in exact:
             key_metrics['today_generation'] = exact['pv_generation_today_kwh']
 
         # Create comprehensive analysis
@@ -197,8 +211,10 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
             'cache_hit': cache_key in str(processed_data)  # Simple cache hit detection
         }
         if exact:
-            result['pv_generation_today_kwh'] = exact['pv_generation_today_kwh']
-            result['pv_generation_today'] = exact
+            result['exact_daily'] = exact
+            for field in self._EXACT_DAILY_FIELDS:
+                if field in exact:
+                    result[field] = exact[field]
         return result
     
     async def _analyze_historical_data(self, 
@@ -343,29 +359,36 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
             'analysis': analysis
         }
 
-        # Exact daily PV (PVEnergyTotal day-delta) for day reports — supersedes the
-        # generation+charge approximation. Falls back silently if history is missing.
+        # Exact daily energy (cumulative-counter day-deltas) for day reports —
+        # supersedes the rounded/lagged report fields and the generation+charge
+        # approximation. Falls back silently if history is unavailable.
         if dimension == 'day':
-            exact = await self._fetch_exact_daily_pv(device_sn, year, month, day)
+            exact = await self._fetch_exact_daily_energy(device_sn, year, month, day)
             if exact:
-                result['pv_generation_today_kwh'] = exact['pv_generation_today_kwh']
-                result['pv_generation_today'] = exact
-                processed_data.setdefault('totals', {})['pv_generation_today_kwh'] = \
-                    exact['pv_generation_today_kwh']
-                if isinstance(analysis.get('energy_balance'), dict):
-                    analysis['energy_balance']['pv_generation_today_kwh'] = \
-                        exact['pv_generation_today_kwh']
-                    analysis['energy_balance']['pv_generation_today_source'] = exact['source']
+                result['exact_daily'] = exact
+                totals = processed_data.setdefault('totals', {})
+                energy_balance = analysis.get('energy_balance')
+                for field in self._EXACT_DAILY_FIELDS:
+                    if field in exact:
+                        result[field] = exact[field]
+                        totals[field] = exact[field]
+                        if isinstance(energy_balance, dict):
+                            energy_balance[field] = exact[field]
+                if isinstance(energy_balance, dict):
+                    energy_balance['exact_daily_source'] = exact['source']
 
         return result
 
-    async def _fetch_exact_daily_pv(self, device_sn: str, year: int,
-                                    month: int, day: int) -> Optional[Dict[str, Any]]:
-        """Exact daily PV generation via the PVEnergyTotal history day-difference.
+    async def _fetch_exact_daily_energy(self, device_sn: str, year: int,
+                                        month: int, day: int) -> Optional[Dict[str, Any]]:
+        """Exact daily energy via cumulative-counter day-differences from history.
 
-        Window = local-day [00:00, min(now, 23:59:59)]. Cached (short TTL for
-        today, stable for past days). Returns None on any failure so callers
-        fall back to pv_generation_estimate_kwh (generation + charge).
+        One /device/history call yields PV, feedin, grid consumption, charge and
+        discharge for the local-day window [00:00, min(now, 23:59:59)]. Each
+        value matches the inverter app, unlike the rounded/lagged report fields.
+        Cached (short TTL for today, stable for past days), rate-limit-retried and
+        shape-guarded. Returns a dict of ``*_today_kwh`` fields plus window
+        metadata, or None on any failure so callers fall back to the report fields.
         """
         try:
             day_start = datetime(year, month, day, 0, 0, 0)
@@ -379,15 +402,28 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
             end_ts = int(day_end.timestamp() * 1000)
 
             cache_key = self._get_cache_key(
-                'pv_today', device_sn=device_sn, year=year, month=month, day=day
+                'exact_daily', device_sn=device_sn, year=year, month=month, day=day
             )
 
             async def fetch():
                 response = await self._run_async_operation(
-                    self.api_client.get_pv_energy_total_history,
+                    self.api_client.get_energy_counters_history,
                     device_sn=device_sn, begin_ts=begin_ts, end_ts=end_ts
                 )
-                return self.data_processor.compute_daily_pv_from_history(response)
+                computed = self.data_processor.compute_daily_counter_deltas(response)
+                if not computed:
+                    return None
+                out = {
+                    'source': 'counter_history_delta',
+                    'data_points': computed['data_points'],
+                    'first_time': computed['first_time'],
+                    'last_time': computed['last_time'],
+                }
+                for fox_var, value in computed['deltas'].items():
+                    field = self._EXACT_FIELD_BY_COUNTER.get(fox_var)
+                    if field:
+                        out[field] = value
+                return out
 
             # This is a SECOND API call after the report/realtime fetch, so the
             # ~1s/request rate limiter will often reject it on the first try.
@@ -413,7 +449,7 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
             return None
         except Exception as e:
             self.logger.warning(
-                f"Exact daily PV unavailable, falling back to estimate: {e}"
+                f"Exact daily energy unavailable, falling back to report fields: {e}"
             )
             return None
     

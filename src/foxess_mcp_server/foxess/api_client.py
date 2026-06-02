@@ -286,32 +286,40 @@ class FoxESSAPIClient:
         
         return self._make_request('POST', self.endpoints['historical_data'], data)
     
-    def get_pv_energy_total_history(self,
+    # Cumulative kWh counters whose day-difference yields exact daily energy values
+    # (unlike the rounded, lagged /device/report fields). PVEnergyTotal is the DC PV
+    # input counter; the others are exported/imported/charged/discharged totals.
+    DAILY_COUNTER_VARIABLES = ('PVEnergyTotal', 'feedin', 'gridConsumption',
+                               'chargeEnergyToTal', 'dischargeEnergyToTal')
+
+    def get_energy_counters_history(self,
                                     device_sn: str = None,
                                     begin_ts: int = None,
-                                    end_ts: int = None) -> Dict[str, Any]:
+                                    end_ts: int = None,
+                                    variables: List[str] = None) -> Dict[str, Any]:
         """
-        Get the cumulative DC PV counter (PVEnergyTotal) as a time series.
+        Get cumulative energy counters as time series from /device/history.
 
-        PVEnergyTotal is measured at the PV/module input, so its daily delta is
-        the true PV generation the inverter app shows — unlike `generation`
-        (AC yield) which misses DC-side battery charging. Used to derive the
-        exact `pv_generation_today_kwh`.
+        Each counter's day-difference (last - first reading in the window) is the
+        exact daily value the inverter app shows: PVEnergyTotal -> PV generation,
+        feedin -> export, gridConsumption -> import, charge/discharge -> battery.
+        A single call returns all requested series.
 
         Args:
             device_sn: Device serial number (uses default if None)
             begin_ts: Window start, epoch milliseconds (local-day midnight)
             end_ts: Window end, epoch milliseconds
+            variables: FoxESS counter names (defaults to DAILY_COUNTER_VARIABLES)
 
         Returns:
-            /device/history response with a PVEnergyTotal data series
+            /device/history response with one data series per counter
         """
         sn = device_sn or self.auth.get_device_sn()
         data = {
             'sn': sn,
             'begin': int(begin_ts),
             'end': int(end_ts),
-            'variables': ['PVEnergyTotal'],
+            'variables': list(variables) if variables else list(self.DAILY_COUNTER_VARIABLES),
         }
         return self._make_request('POST', self.endpoints['historical_data'], data)
 
