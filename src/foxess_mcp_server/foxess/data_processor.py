@@ -470,15 +470,15 @@ class DataProcessor:
         return metrics
     
     def compute_daily_pv_from_history(self, response: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Exakte PV-Tageserzeugung aus einer PVEnergyTotal-History-Zeitreihe.
+        """Exact daily PV generation from a PVEnergyTotal history time series.
 
-        PVEnergyTotal ist ein kumulierter DC-kWh-Zähler am PV-Eingang (das, was
-        der Wechselrichter/die App als Erzeugung anzeigt). Tageswert =
-        letzter − erster Messpunkt im Tagesfenster; nachts ist die PV-Erzeugung 0,
-        daher ist der erste Messpunkt nach Mitternacht eine gültige Baseline.
+        PVEnergyTotal is a cumulative DC kWh counter at the PV input (what the
+        inverter/app shows as generation). Daily value = last - first reading in
+        the day window; overnight PV is 0, so the first post-midnight reading is a
+        valid baseline.
 
-        Gibt None zurück, wenn die Zeitreihe fehlt/leer ist, damit der Aufrufer
-        auf die Näherung (generation + charge_energy_total) zurückfallen kann.
+        Returns None when the series is missing/empty so the caller can fall back
+        to the approximation (generation + charge_energy_total).
         """
         if not isinstance(response, dict) or response.get('errno', 0) != 0:
             return None
@@ -502,7 +502,7 @@ class DataProcessor:
         latest = points[-1]['value']
         pv = latest - baseline
         if pv < 0:
-            pv = 0.0  # Zählerreset / Lücke abfangen
+            pv = 0.0  # guard against counter reset / gap
 
         return {
             'pv_generation_today_kwh': round(pv, 2),
@@ -587,10 +587,10 @@ class DataProcessor:
             }
             totals[standard_name] = round(total, 2)
 
-        # Derived field: PV-Erzeugungs-Näherung.
-        # `generation` ist nur der AC-Ertrag; DC-seitiges Batterieladen fehlt dort.
-        # PV ≈ generation + charge_energy_total. NÄHERUNG, kein exakter PV-Wert
-        # (genauer wäre PVEnergyTotal-Tagesdifferenz oder pvPower-Integration).
+        # Derived field: PV generation approximation.
+        # `generation` is only the AC yield; DC-side battery charging is missing.
+        # PV ≈ generation + charge_energy_total. APPROXIMATION, not an exact PV value
+        # (the exact value is the PVEnergyTotal day-difference or pvPower integration).
         if 'generation' in totals or 'charge_energy_total' in totals:
             totals['pv_generation_estimate_kwh'] = round(
                 totals.get('generation', 0) + totals.get('charge_energy_total', 0), 2
@@ -695,8 +695,8 @@ class DataProcessor:
                     row['self_consumption'] = 0
                     row['self_consumption_ratio'] = 0
 
-            # PV-Erzeugungs-Näherung pro Periode (siehe process_report_response):
-            # generation (AC-Ertrag) + Batterieladung. Näherung, kein exakter PV-Wert.
+            # Per-period PV generation approximation (see process_report_response):
+            # generation (AC yield) + battery charging. Approximation, not exact PV.
             if 'generation' in row or 'charge_energy_total' in row:
                 row['pv_generation_estimate'] = round(
                     row.get('generation', 0) + row.get('charge_energy_total', 0), 2

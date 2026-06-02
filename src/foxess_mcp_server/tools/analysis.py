@@ -361,7 +361,7 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
 
     async def _fetch_exact_daily_pv(self, device_sn: str, year: int,
                                     month: int, day: int) -> Optional[Dict[str, Any]]:
-        """Exact PV-Tageserzeugung via PVEnergyTotal-History-Differenz.
+        """Exact daily PV generation via the PVEnergyTotal history day-difference.
 
         Window = local-day [00:00, min(now, 23:59:59)]. Cached (short TTL for
         today, stable for past days). Returns None on any failure so callers
@@ -447,12 +447,12 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
                 'self_consumption_ratio': round(self_consumption / generation * 100, 1) if generation > 0 else 0,
                 'autarky_ratio': round((generation - feedin) / (generation - feedin + grid_consumption) * 100, 1) if (generation - feedin + grid_consumption) > 0 else 0,
                 'net_position_kwh': round(generation - grid_consumption, 2),
-                # generation ist nur der AC-Ertrag; PV ≈ generation + Batterieladung.
+                # generation is only the AC yield; PV ≈ generation + battery charging.
                 'pv_generation_estimate_kwh': round(generation + charge_energy_total, 2),
                 'pv_generation_note': (
-                    'Näherung: generation ist der AC-Ertrag, nicht die PV-Erzeugung. '
-                    'DC-seitiges Batterieladen fehlt in generation. '
-                    'PV ≈ generation + charge_energy_total – kein exakter PV-Wert.'
+                    'Approximation: generation is the AC yield, not PV generation. '
+                    'DC-side battery charging is missing from generation. '
+                    'PV ≈ generation + charge_energy_total - not an exact PV value.'
                 ),
             }
         

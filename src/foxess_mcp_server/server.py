@@ -34,50 +34,47 @@ from .tools.forecast import ForecastTool
 
 
 # Server-wide instructions surfaced to the LLM client (MCP `instructions`).
-# Kernproblem: `generation` aus /device/report ist der AC-Ertrag, nicht die
-# PV-Erzeugung — bei Speichersystemen systematisch zu niedrig.
+# Core problem: `generation` from /device/report is the AC yield, not PV
+# generation — systematically too low on battery systems.
 SERVER_INSTRUCTIONS = (
-    "Dieser Server greift für Energie-Reports auf den FoxESS `/device/report`-"
-    "Endpunkt zu, der nur AC-/Bilanz-Felder liefert. Bei der Frage \"Wie viel hat "
-    "die Anlage heute produziert?\" niemals blind `generation` zurückgeben – das "
-    "ist der AC-Ertrag (Ausgabe an Haus/Netz), nicht die PV-Erzeugung. Für die "
-    "EXAKTE PV-Tageserzeugung liefern report_day und realtime das Feld "
-    "`pv_generation_today_kwh` – die Tagesdifferenz des kumulierten DC-PV-Zählers "
-    "PVEnergyTotal (deckt sich mit der Hersteller-App). Dieses Feld bevorzugen, "
-    "wenn vorhanden. Fehlt es (z. B. ältere Tage ohne History), auf die Näherung "
-    "`pv_generation_estimate_kwh` (= generation + charge_energy_total) zurück"
-    "greifen und als Näherung kenntlich machen. report_day/report_month kennen "
-    "nur: generation, feedin, gridConsumption, charge_energy_total, "
-    "discharge_energy_total. `today_generation` im realtime-Call wird – sofern "
-    "History verfügbar – mit dem exakten Wert befüllt; ist es 0/None, nicht als "
-    "Tageserzeugung verwenden. Latenz/Genauigkeit: Der report_day des laufenden Tages "
-    "läuft ~10–20 Min hinter der Hersteller-App nach, und die Stundenwerte sind "
-    "auf 0,1 kWh gerundet; zusammen mit Wandlerverlusten kann "
-    "pv_generation_estimate_kwh einige Prozent von der App abweichen. Für \"heute "
-    "exakt jetzt\" die realtime-Leistungen nutzen; für abgeschlossene Vortage ist "
-    "die Näherung am genauesten."
+    "This server reads energy reports from the FoxESS `/device/report` endpoint, "
+    "which returns only AC / balance fields. For the question \"how much did the "
+    "system produce today?\" never blindly return `generation` — that is the AC "
+    "yield (output to house and grid), not PV generation. For the EXACT daily PV "
+    "generation, report_day and realtime provide the field `pv_generation_today_kwh` "
+    "— the day-difference of the cumulative DC PV counter PVEnergyTotal (matches the "
+    "manufacturer's app). Prefer this field when present. If it is missing (e.g. "
+    "older days without history), fall back to the approximation "
+    "`pv_generation_estimate_kwh` (= generation + charge_energy_total) and label it "
+    "as an approximation. report_day/report_month know only: generation, feedin, "
+    "gridConsumption, charge_energy_total, discharge_energy_total. `today_generation` "
+    "in the realtime call is filled with the exact value when history is available; "
+    "if it is 0/None, do not use it as the day's generation. Latency/accuracy: the "
+    "report_day of the current day lags ~10-20 min behind the app, and hourly values "
+    "are rounded to 0.1 kWh; together with conversion losses, "
+    "pv_generation_estimate_kwh can deviate a few percent from the app. For \"exactly "
+    "now today\" use the realtime power figures; for closed past days the approximation "
+    "is most accurate."
 )
 
-# Hinweistext für die foxess_analysis-Tool-Description (Punkt 1).
+# Note appended to the foxess_analysis tool description.
 _ANALYSIS_GENERATION_NOTE = (
-    "\n\nWICHTIG – Erzeugung vs. Ertrag bei Batteriesystemen: Das Feld "
-    "`generation` ist der AC-Ertrag des Wechselrichters (Ausgabe an Haus/Netz), "
-    "NICHT die PV-Erzeugung der Module. Bei Anlagen mit Speicher wird DC-seitiges "
-    "Batterieladen NICHT in `generation` gezählt – der Wert ist dann deutlich zu "
-    "niedrig. Für die PV-Tageserzeugung (so wie der Wechselrichter sie anzeigt) "
-    "liefern report_day und realtime das EXAKTE Feld `pv_generation_today_kwh` – "
-    "die Tagesdifferenz des kumulierten DC-PV-Zählers PVEnergyTotal (deckt sich "
-    "mit der App). Dieses Feld bevorzugen. Als Fallback (z. B. ältere Tage ohne "
-    "History) gibt es die Näherung `pv_generation_estimate_kwh` ≈ generation + "
-    "charge_energy_total. report_day/report_month kennen NUR: generation, feedin, "
-    "gridConsumption, charge_energy_total, discharge_energy_total. "
-    "`today_generation` im realtime-Call wird – sofern History verfügbar – mit dem "
-    "exakten Wert befüllt; ist es 0/None, nicht als Tageserzeugung verwenden. "
-    "Hinweis zu Latenz/Genauigkeit: "
-    "report_day des laufenden Tages läuft ~10–20 Min nach, Stundenwerte sind auf "
-    "0,1 kWh gerundet; mit Wandlerverlusten kann pv_generation_estimate_kwh einige "
-    "Prozent von der App abweichen (Näherung). Für den exakten Momentanwert "
-    "realtime nutzen; abgeschlossene Vortage sind am genauesten."
+    "\n\nIMPORTANT — generation vs. yield on battery systems: the `generation` field "
+    "is the inverter's AC yield (output to house and grid), NOT the PV modules' "
+    "generation. On systems with a battery, DC-side battery charging is NOT counted "
+    "in `generation`, so the value is then much too low. For the daily PV generation "
+    "(as the inverter shows it), report_day and realtime provide the EXACT field "
+    "`pv_generation_today_kwh` — the day-difference of the cumulative DC PV counter "
+    "PVEnergyTotal (matches the app). Prefer this field. As a fallback (e.g. older "
+    "days without history) there is the approximation `pv_generation_estimate_kwh` ≈ "
+    "generation + charge_energy_total. report_day/report_month know ONLY: generation, "
+    "feedin, gridConsumption, charge_energy_total, discharge_energy_total. "
+    "`today_generation` in the realtime call is filled with the exact value when "
+    "history is available; if it is 0/None, do not use it as the day's generation. "
+    "Note on latency/accuracy: the current-day report_day lags ~10-20 min, hourly "
+    "values are rounded to 0.1 kWh; with conversion losses pv_generation_estimate_kwh "
+    "can deviate a few percent from the app (approximation). For the exact current "
+    "value use realtime; closed past days are most accurate."
 )
 
 
