@@ -49,62 +49,69 @@ def test_report_summary_table_includes_per_period_pv_estimate():
         )
 
 
-def _pv_history(values, variable="PVEnergyTotal", errno=0):
-    """Build a /device/history response carrying a PVEnergyTotal cumulative series."""
+def _counter_history(series_values, errno=0):
+    """Build a /device/history response with one cumulative series per entry.
+
+    series_values: dict {fox_variable: [v0, v1, ...]} of cumulative counter values.
+    """
     return {
         "errno": errno,
         "result": [
             {
                 "datas": [
                     {
-                        "variable": variable,
+                        "variable": var,
                         "unit": "kWh",
-                        "data": [{"time": f"t{i}", "value": v} for i, v in enumerate(values)],
+                        "data": [{"time": f"t{i}", "value": v} for i, v in enumerate(vals)],
                     }
+                    for var, vals in series_values.items()
                 ]
             }
         ],
     }
 
 
-def test_daily_pv_from_history_is_last_minus_first():
-    # Real shape: midnight baseline 11481.6, latest 11499.4 -> 17.8 kWh (matches app).
-    out = DataProcessor().compute_daily_pv_from_history(
-        _pv_history([11481.6, 11490.0, 11499.4])
-    )
+def test_counter_deltas_are_last_minus_first_per_series():
+    # Yesterday's real shape (closed day): all five match the app exactly.
+    out = DataProcessor().compute_daily_counter_deltas(_counter_history({
+        "PVEnergyTotal": [11433.8, 11460.0, 11481.6],
+        "feedin": [6280.4, 6290.0, 6297.0],
+        "gridConsumption": [3452.2, 3452.3, 3452.3],
+        "chargeEnergyToTal": [2515.8, 2519.0, 2522.4],
+        "dischargeEnergyToTal": [2280.7, 2285.0, 2288.6],
+    }))
     assert out is not None
-    assert out["pv_generation_today_kwh"] == pytest.approx(17.8, abs=0.01)
-    assert out["baseline_kwh"] == pytest.approx(11481.6)
-    assert out["latest_kwh"] == pytest.approx(11499.4)
+    d = out["deltas"]
+    assert d["PVEnergyTotal"] == pytest.approx(47.8, abs=0.01)
+    assert d["feedin"] == pytest.approx(16.6, abs=0.01)
+    assert d["gridConsumption"] == pytest.approx(0.1, abs=0.01)
+    assert d["chargeEnergyToTal"] == pytest.approx(6.6, abs=0.01)
+    assert d["dischargeEnergyToTal"] == pytest.approx(7.9, abs=0.01)
     assert out["data_points"] == 3
-    assert out["source"] == "PVEnergyTotal_history"
 
 
-def test_daily_pv_clamps_counter_reset_to_zero():
-    out = DataProcessor().compute_daily_pv_from_history(_pv_history([100.0, 90.0]))
-    assert out["pv_generation_today_kwh"] == 0.0
+def test_counter_deltas_clamp_reset_to_zero():
+    out = DataProcessor().compute_daily_counter_deltas(_counter_history({"feedin": [100.0, 90.0]}))
+    assert out["deltas"]["feedin"] == 0.0
 
 
-def test_daily_pv_single_point_is_zero():
-    out = DataProcessor().compute_daily_pv_from_history(_pv_history([11481.6]))
-    assert out["pv_generation_today_kwh"] == 0.0
+def test_counter_deltas_single_point_is_zero():
+    out = DataProcessor().compute_daily_counter_deltas(_counter_history({"PVEnergyTotal": [11481.6]}))
+    assert out["deltas"]["PVEnergyTotal"] == 0.0
 
 
-def test_daily_pv_none_when_unavailable():
-    assert DataProcessor().compute_daily_pv_from_history(_pv_history([])) is None
-    assert DataProcessor().compute_daily_pv_from_history({"errno": 40256}) is None
-    assert DataProcessor().compute_daily_pv_from_history({}) is None
+def test_counter_deltas_none_when_unavailable():
+    assert DataProcessor().compute_daily_counter_deltas(_counter_history({})) is None
+    assert DataProcessor().compute_daily_counter_deltas({"errno": 40256}) is None
+    assert DataProcessor().compute_daily_counter_deltas({}) is None
 
 
-def test_daily_pv_picks_pvenergytotal_among_series():
-    resp = _pv_history([1.0, 2.0], variable="pvPower")
-    # add the real PVEnergyTotal series second
-    resp["result"][0]["datas"].append(
-        {"variable": "PVEnergyTotal", "unit": "kWh",
-         "data": [{"time": "t0", "value": 500.0}, {"time": "t1", "value": 517.8}]}
-    )
-    out = DataProcessor().compute_daily_pv_from_history(resp)
-    assert out["pv_generation_today_kwh"] == pytest.approx(17.8, abs=0.01)
+def test_counter_deltas_skip_empty_series_keep_others():
+    resp = _counter_history({"PVEnergyTotal": [500.0, 517.8]})
+    resp["result"][0]["datas"].append({"variable": "feedin", "unit": "kWh", "data": []})
+    out = DataProcessor().compute_daily_counter_deltas(resp)
+    assert out["deltas"] == {"PVEnergyTotal": pytest.approx(17.8, abs=0.01)}
+    assert "feedin" not in out["deltas"]
 
 
 def test_report_does_not_drop_existing_fields():

@@ -469,16 +469,20 @@ class DataProcessor:
         
         return metrics
     
-    def compute_daily_pv_from_history(self, response: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Exact daily PV generation from a PVEnergyTotal history time series.
+    def compute_daily_counter_deltas(self, response: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Exact daily energy from cumulative-counter history time series.
 
-        PVEnergyTotal is a cumulative DC kWh counter at the PV input (what the
-        inverter/app shows as generation). Daily value = last - first reading in
-        the day window; overnight PV is 0, so the first post-midnight reading is a
-        valid baseline.
+        Each series (PVEnergyTotal, feedin, gridConsumption, chargeEnergyToTal,
+        dischargeEnergyToTal) is a cumulative kWh counter; its day-difference
+        (last - first reading in the day window) is the exact daily value the
+        inverter/app shows. Overnight PV is 0, so the first post-midnight reading
+        is a valid baseline. Deltas are clamped to >= 0 to guard against counter
+        resets / gaps.
 
-        Returns None when the series is missing/empty so the caller can fall back
-        to the approximation (generation + charge_energy_total).
+        Returns ``{'deltas': {fox_variable: kwh}, 'data_points', 'first_time',
+        'last_time'}`` keyed by the raw FoxESS variable names, or None when no
+        usable series is present (so callers fall back to the rounded/lagged
+        /device/report fields).
         """
         if not isinstance(response, dict) or response.get('errno', 0) != 0:
             return None
@@ -486,32 +490,32 @@ class DataProcessor:
         if not isinstance(result, list) or not result or not isinstance(result[0], dict):
             return None
 
-        datas = result[0].get('datas', [])
-        series = next((s for s in datas if s.get('variable') == 'PVEnergyTotal'), None)
-        if series is None and datas:
-            series = datas[0]
-        if not series:
-            return None
+        deltas: Dict[str, float] = {}
+        data_points = 0
+        first_time = None
+        last_time = None
+        for series in result[0].get('datas', []):
+            variable = series.get('variable')
+            points = [p for p in series.get('data', [])
+                      if isinstance(p.get('value'), (int, float))]
+            if not variable or not points:
+                continue
+            delta = points[-1]['value'] - points[0]['value']
+            deltas[variable] = round(max(delta, 0.0), 2)
+            # Track the widest series for window metadata.
+            if len(points) > data_points:
+                data_points = len(points)
+                first_time = points[0].get('time')
+                last_time = points[-1].get('time')
 
-        points = [p for p in series.get('data', [])
-                  if isinstance(p.get('value'), (int, float))]
-        if not points:
+        if not deltas:
             return None
-
-        baseline = points[0]['value']
-        latest = points[-1]['value']
-        pv = latest - baseline
-        if pv < 0:
-            pv = 0.0  # guard against counter reset / gap
 
         return {
-            'pv_generation_today_kwh': round(pv, 2),
-            'baseline_kwh': round(baseline, 2),
-            'latest_kwh': round(latest, 2),
-            'data_points': len(points),
-            'first_time': points[0].get('time'),
-            'last_time': points[-1].get('time'),
-            'source': 'PVEnergyTotal_history',
+            'deltas': deltas,
+            'data_points': data_points,
+            'first_time': first_time,
+            'last_time': last_time,
         }
 
     def process_report_response(self, response: Dict[str, Any],
