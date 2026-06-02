@@ -469,7 +469,52 @@ class DataProcessor:
         
         return metrics
     
-    def process_report_response(self, response: Dict[str, Any], 
+    def compute_daily_pv_from_history(self, response: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Exakte PV-Tageserzeugung aus einer PVEnergyTotal-History-Zeitreihe.
+
+        PVEnergyTotal ist ein kumulierter DC-kWh-Zähler am PV-Eingang (das, was
+        der Wechselrichter/die App als Erzeugung anzeigt). Tageswert =
+        letzter − erster Messpunkt im Tagesfenster; nachts ist die PV-Erzeugung 0,
+        daher ist der erste Messpunkt nach Mitternacht eine gültige Baseline.
+
+        Gibt None zurück, wenn die Zeitreihe fehlt/leer ist, damit der Aufrufer
+        auf die Näherung (generation + charge_energy_total) zurückfallen kann.
+        """
+        if not isinstance(response, dict) or response.get('errno', 0) != 0:
+            return None
+        result = response.get('result')
+        if not isinstance(result, list) or not result or not isinstance(result[0], dict):
+            return None
+
+        datas = result[0].get('datas', [])
+        series = next((s for s in datas if s.get('variable') == 'PVEnergyTotal'), None)
+        if series is None and datas:
+            series = datas[0]
+        if not series:
+            return None
+
+        points = [p for p in series.get('data', [])
+                  if isinstance(p.get('value'), (int, float))]
+        if not points:
+            return None
+
+        baseline = points[0]['value']
+        latest = points[-1]['value']
+        pv = latest - baseline
+        if pv < 0:
+            pv = 0.0  # Zählerreset / Lücke abfangen
+
+        return {
+            'pv_generation_today_kwh': round(pv, 2),
+            'baseline_kwh': round(baseline, 2),
+            'latest_kwh': round(latest, 2),
+            'data_points': len(points),
+            'first_time': points[0].get('time'),
+            'last_time': points[-1].get('time'),
+            'source': 'PVEnergyTotal_history',
+        }
+
+    def process_report_response(self, response: Dict[str, Any],
                                 dimension: str, 
                                 year: int, 
                                 month: int = None, 

@@ -2,10 +2,12 @@
 FoxESS Analysis Tool - Real-time and historical data analysis
 """
 
+import asyncio
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from ..utils.validation import SecurityValidator
+from ..utils.errors import RateLimitError
 from ..foxess.data_processor import DataProcessor
 from ..cache.strategies import CacheStrategy
 from .base import BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingMixin
@@ -174,11 +176,18 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
         
         # Extract key metrics
         key_metrics = self.data_processor.extract_key_metrics(processed_data, 'realtime')
-        
+
+        # Fill today_generation with the EXACT PV day value (PVEnergyTotal delta)
+        # instead of the unreliable todayYield (often 0). Falls back silently.
+        now = datetime.now()
+        exact = await self._fetch_exact_daily_pv(device_sn, now.year, now.month, now.day)
+        if exact:
+            key_metrics['today_generation'] = exact['pv_generation_today_kwh']
+
         # Create comprehensive analysis
         analysis = self._create_realtime_analysis(processed_data, key_metrics)
-        
-        return {
+
+        result = {
             'analysis_type': 'realtime',
             'device_sn': device_sn,
             'timestamp': processed_data.get('timestamp'),
@@ -187,6 +196,10 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
             'analysis': analysis,
             'cache_hit': cache_key in str(processed_data)  # Simple cache hit detection
         }
+        if exact:
+            result['pv_generation_today_kwh'] = exact['pv_generation_today_kwh']
+            result['pv_generation_today'] = exact
+        return result
     
     async def _analyze_historical_data(self, 
                                       device_sn: str,
@@ -316,8 +329,8 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
         
         # Create analysis based on dimension
         analysis = self._create_report_analysis(processed_data, dimension)
-        
-        return {
+
+        result = {
             'analysis_type': f'report_{dimension}',
             'device_sn': device_sn,
             'period': {
@@ -329,6 +342,80 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
             'data': processed_data,
             'analysis': analysis
         }
+
+        # Exact daily PV (PVEnergyTotal day-delta) for day reports — supersedes the
+        # generation+charge approximation. Falls back silently if history is missing.
+        if dimension == 'day':
+            exact = await self._fetch_exact_daily_pv(device_sn, year, month, day)
+            if exact:
+                result['pv_generation_today_kwh'] = exact['pv_generation_today_kwh']
+                result['pv_generation_today'] = exact
+                processed_data.setdefault('totals', {})['pv_generation_today_kwh'] = \
+                    exact['pv_generation_today_kwh']
+                if isinstance(analysis.get('energy_balance'), dict):
+                    analysis['energy_balance']['pv_generation_today_kwh'] = \
+                        exact['pv_generation_today_kwh']
+                    analysis['energy_balance']['pv_generation_today_source'] = exact['source']
+
+        return result
+
+    async def _fetch_exact_daily_pv(self, device_sn: str, year: int,
+                                    month: int, day: int) -> Optional[Dict[str, Any]]:
+        """Exact PV-Tageserzeugung via PVEnergyTotal-History-Differenz.
+
+        Window = local-day [00:00, min(now, 23:59:59)]. Cached (short TTL for
+        today, stable for past days). Returns None on any failure so callers
+        fall back to pv_generation_estimate_kwh (generation + charge).
+        """
+        try:
+            day_start = datetime(year, month, day, 0, 0, 0)
+            now = datetime.now()
+            if day_start.date() > now.date():
+                return None  # future day
+            is_today = day_start.date() == now.date()
+            day_end = now if is_today else datetime(year, month, day, 23, 59, 59)
+
+            begin_ts = int(day_start.timestamp() * 1000)
+            end_ts = int(day_end.timestamp() * 1000)
+
+            cache_key = self._get_cache_key(
+                'pv_today', device_sn=device_sn, year=year, month=month, day=day
+            )
+
+            async def fetch():
+                response = await self._run_async_operation(
+                    self.api_client.get_pv_energy_total_history,
+                    device_sn=device_sn, begin_ts=begin_ts, end_ts=end_ts
+                )
+                return self.data_processor.compute_daily_pv_from_history(response)
+
+            # This is a SECOND API call after the report/realtime fetch, so the
+            # ~1s/request rate limiter will often reject it on the first try.
+            # Wait out the interval once and retry rather than silently degrading.
+            data_type = 'realtime' if is_today else 'report'
+            result = None
+            for attempt in range(2):
+                try:
+                    result = await self._get_cached_or_fetch(
+                        cache_key, fetch, data_type=data_type
+                    )
+                    break
+                except RateLimitError as e:
+                    if attempt == 0:
+                        await asyncio.sleep(getattr(e, 'retry_after', 1) or 1)
+                        continue
+                    raise
+
+            # Only trust a result that has our expected shape (guards against a
+            # shared cache returning foreign data for an overlapping key).
+            if isinstance(result, dict) and 'pv_generation_today_kwh' in result:
+                return result
+            return None
+        except Exception as e:
+            self.logger.warning(
+                f"Exact daily PV unavailable, falling back to estimate: {e}"
+            )
+            return None
     
     def _create_report_analysis(self, data: Dict[str, Any], dimension: str) -> Dict[str, Any]:
         """Create analysis insights for report data"""

@@ -49,6 +49,64 @@ def test_report_summary_table_includes_per_period_pv_estimate():
         )
 
 
+def _pv_history(values, variable="PVEnergyTotal", errno=0):
+    """Build a /device/history response carrying a PVEnergyTotal cumulative series."""
+    return {
+        "errno": errno,
+        "result": [
+            {
+                "datas": [
+                    {
+                        "variable": variable,
+                        "unit": "kWh",
+                        "data": [{"time": f"t{i}", "value": v} for i, v in enumerate(values)],
+                    }
+                ]
+            }
+        ],
+    }
+
+
+def test_daily_pv_from_history_is_last_minus_first():
+    # Real shape: midnight baseline 11481.6, latest 11499.4 -> 17.8 kWh (matches app).
+    out = DataProcessor().compute_daily_pv_from_history(
+        _pv_history([11481.6, 11490.0, 11499.4])
+    )
+    assert out is not None
+    assert out["pv_generation_today_kwh"] == pytest.approx(17.8, abs=0.01)
+    assert out["baseline_kwh"] == pytest.approx(11481.6)
+    assert out["latest_kwh"] == pytest.approx(11499.4)
+    assert out["data_points"] == 3
+    assert out["source"] == "PVEnergyTotal_history"
+
+
+def test_daily_pv_clamps_counter_reset_to_zero():
+    out = DataProcessor().compute_daily_pv_from_history(_pv_history([100.0, 90.0]))
+    assert out["pv_generation_today_kwh"] == 0.0
+
+
+def test_daily_pv_single_point_is_zero():
+    out = DataProcessor().compute_daily_pv_from_history(_pv_history([11481.6]))
+    assert out["pv_generation_today_kwh"] == 0.0
+
+
+def test_daily_pv_none_when_unavailable():
+    assert DataProcessor().compute_daily_pv_from_history(_pv_history([])) is None
+    assert DataProcessor().compute_daily_pv_from_history({"errno": 40256}) is None
+    assert DataProcessor().compute_daily_pv_from_history({}) is None
+
+
+def test_daily_pv_picks_pvenergytotal_among_series():
+    resp = _pv_history([1.0, 2.0], variable="pvPower")
+    # add the real PVEnergyTotal series second
+    resp["result"][0]["datas"].append(
+        {"variable": "PVEnergyTotal", "unit": "kWh",
+         "data": [{"time": "t0", "value": 500.0}, {"time": "t1", "value": 517.8}]}
+    )
+    out = DataProcessor().compute_daily_pv_from_history(resp)
+    assert out["pv_generation_today_kwh"] == pytest.approx(17.8, abs=0.01)
+
+
 def test_report_does_not_drop_existing_fields():
     """Acceptance: no existing field/name is removed — only added."""
     out = DataProcessor().process_report_response(_day_report_response(), "day", 2026, 6, 2)
