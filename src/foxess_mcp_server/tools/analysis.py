@@ -348,7 +348,8 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
         generation = totals.get('generation', 0)
         grid_consumption = totals.get('grid_consumption', 0)
         feedin = totals.get('feedin', 0)
-        
+        charge_energy_total = totals.get('charge_energy_total', 0)
+
         if generation > 0:
             self_consumption = generation - feedin
             analysis['energy_balance'] = {
@@ -358,7 +359,14 @@ class AnalysisTool(BaseTool, TimeRangeMixin, DataValidationMixin, ErrorHandlingM
                 'self_consumption_kwh': round(self_consumption, 2),
                 'self_consumption_ratio': round(self_consumption / generation * 100, 1) if generation > 0 else 0,
                 'autarky_ratio': round((generation - feedin) / (generation - feedin + grid_consumption) * 100, 1) if (generation - feedin + grid_consumption) > 0 else 0,
-                'net_position_kwh': round(generation - grid_consumption, 2)
+                'net_position_kwh': round(generation - grid_consumption, 2),
+                # generation ist nur der AC-Ertrag; PV ≈ generation + Batterieladung.
+                'pv_generation_estimate_kwh': round(generation + charge_energy_total, 2),
+                'pv_generation_note': (
+                    'Näherung: generation ist der AC-Ertrag, nicht die PV-Erzeugung. '
+                    'DC-seitiges Batterieladen fehlt in generation. '
+                    'PV ≈ generation + charge_energy_total – kein exakter PV-Wert.'
+                ),
             }
         
         # Find trends and highlights

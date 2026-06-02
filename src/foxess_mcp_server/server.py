@@ -29,15 +29,58 @@ from .utils.errors import FoxESSMCPError, ConfigurationError, ValidationError
 from .utils.validation import SecurityValidator
 from .foxess.api_client import FoxESSAPIClient
 from .tools.analysis import AnalysisTool
-from .tools.diagnosis import DiagnosisTool  
+from .tools.diagnosis import DiagnosisTool
 from .tools.forecast import ForecastTool
+
+
+# Server-wide instructions surfaced to the LLM client (MCP `instructions`).
+# Kernproblem: `generation` aus /device/report ist der AC-Ertrag, nicht die
+# PV-Erzeugung — bei Speichersystemen systematisch zu niedrig.
+SERVER_INSTRUCTIONS = (
+    "Dieser Server greift für Energie-Reports auf den FoxESS `/device/report`-"
+    "Endpunkt zu, der nur AC-/Bilanz-Felder liefert. Bei der Frage \"Wie viel hat "
+    "die Anlage heute produziert?\" niemals blind `generation` zurückgeben – das "
+    "ist der AC-Ertrag (Ausgabe an Haus/Netz), nicht die PV-Erzeugung. Bei "
+    "Speichersystemen `generation + charge_energy_total` rechnen und kenntlich "
+    "machen, dass es eine Näherung ist (das abgeleitete Feld "
+    "`pv_generation_estimate_kwh` in report_day/report_month liefert genau das). "
+    "report_day/report_month kennen nur: generation, feedin, gridConsumption, "
+    "charge_energy_total, discharge_energy_total. `today_generation` aus dem "
+    "realtime-Call ist oft 0 (nicht befüllt) und darf nicht als Tageserzeugung "
+    "verwendet werden. Latenz/Genauigkeit: Der report_day des laufenden Tages "
+    "läuft ~10–20 Min hinter der Hersteller-App nach, und die Stundenwerte sind "
+    "auf 0,1 kWh gerundet; zusammen mit Wandlerverlusten kann "
+    "pv_generation_estimate_kwh einige Prozent von der App abweichen. Für \"heute "
+    "exakt jetzt\" die realtime-Leistungen nutzen; für abgeschlossene Vortage ist "
+    "die Näherung am genauesten."
+)
+
+# Hinweistext für die foxess_analysis-Tool-Description (Punkt 1).
+_ANALYSIS_GENERATION_NOTE = (
+    "\n\nWICHTIG – Erzeugung vs. Ertrag bei Batteriesystemen: Das Feld "
+    "`generation` ist der AC-Ertrag des Wechselrichters (Ausgabe an Haus/Netz), "
+    "NICHT die PV-Erzeugung der Module. Bei Anlagen mit Speicher wird DC-seitiges "
+    "Batterieladen NICHT in `generation` gezählt – der Wert ist dann deutlich zu "
+    "niedrig. Für die PV-Tageserzeugung (so wie der Wechselrichter sie anzeigt): "
+    "PV ≈ generation + charge_energy_total (in report_day/report_month als "
+    "abgeleitetes Feld `pv_generation_estimate_kwh` enthalten, eine Näherung). "
+    "Genauer wäre `PVEnergyTotal` als Tagesdifferenz oder die `pvPower`-History "
+    "aufintegriert. report_day/report_month kennen NUR: generation, feedin, "
+    "gridConsumption, charge_energy_total, discharge_energy_total. "
+    "`today_generation` aus dem realtime-Call ist oft 0 (nicht befüllt) und darf "
+    "nicht als Tageserzeugung verwendet werden. Hinweis zu Latenz/Genauigkeit: "
+    "report_day des laufenden Tages läuft ~10–20 Min nach, Stundenwerte sind auf "
+    "0,1 kWh gerundet; mit Wandlerverlusten kann pv_generation_estimate_kwh einige "
+    "Prozent von der App abweichen (Näherung). Für den exakten Momentanwert "
+    "realtime nutzen; abgeschlossene Vortage sind am genauesten."
+)
 
 
 class FoxESSMCPServer:
     """Main MCP Server for FoxESS Solar Inverters"""
-    
+
     def __init__(self):
-        self.server = Server("foxess-mcp-server")
+        self.server = Server("foxess-mcp-server", instructions=SERVER_INSTRUCTIONS)
         self.logger = logging.getLogger(__name__)
         self.api_client = None
         self.tools = {}
@@ -54,7 +97,10 @@ class FoxESSMCPServer:
         return [
             Tool(
                 name="foxess_analysis",
-                description="Analyze FoxESS solar inverter data with real-time, historical, and aggregated report insights",
+                description=(
+                    "Analyze FoxESS solar inverter data with real-time, historical, "
+                    "and aggregated report insights" + _ANALYSIS_GENERATION_NOTE
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {

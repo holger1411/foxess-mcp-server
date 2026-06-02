@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, Mock
 
 from mcp.types import CallToolResult
-from foxess_mcp_server.server import FoxESSMCPServer
+from foxess_mcp_server.server import FoxESSMCPServer, SERVER_INSTRUCTIONS
 
 
 def test_tool_definitions_have_output_schema_and_annotations():
@@ -18,6 +18,27 @@ def test_tool_definitions_have_output_schema_and_annotations():
         assert t.annotations is not None
         assert t.annotations.readOnlyHint is True
         assert t.annotations.title  # human-readable title set
+
+
+def test_analysis_description_warns_generation_is_ac_yield():
+    """The foxess_analysis description must warn that `generation` is AC yield,
+    not PV generation, and give the battery-system approximation formula."""
+    tools = {t.name: t for t in FoxESSMCPServer._build_tool_definitions()}
+    desc = tools["foxess_analysis"].description
+    assert "generation" in desc
+    assert "AC-Ertrag" in desc
+    assert "charge_energy_total" in desc  # the approximation formula
+    assert "today_generation" in desc  # warns it is often 0
+
+
+def test_server_instructions_warn_generation_is_ac_yield():
+    """Server-wide instructions must carry the same generation-vs-PV warning."""
+    assert "/device/report" in SERVER_INSTRUCTIONS
+    assert "AC-Ertrag" in SERVER_INSTRUCTIONS
+    assert "charge_energy_total" in SERVER_INSTRUCTIONS
+    # latency/rounding caveat so the LLM prefers realtime for "today exact"
+    assert "realtime" in SERVER_INSTRUCTIONS
+    assert "0,1 kWh" in SERVER_INSTRUCTIONS
 
 
 def _bare_server(tools, api_client=None):
