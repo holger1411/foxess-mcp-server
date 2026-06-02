@@ -26,7 +26,7 @@ def test_analysis_description_warns_generation_is_ac_yield():
     tools = {t.name: t for t in FoxESSMCPServer._build_tool_definitions()}
     desc = tools["foxess_analysis"].description
     assert "generation" in desc
-    assert "AC-Ertrag" in desc
+    assert "AC yield" in desc
     assert "charge_energy_total" in desc  # the approximation formula
     assert "today_generation" in desc
     assert "pv_generation_today_kwh" in desc  # the exact PVEnergyTotal-delta field
@@ -36,14 +36,14 @@ def test_analysis_description_warns_generation_is_ac_yield():
 def test_server_instructions_warn_generation_is_ac_yield():
     """Server-wide instructions must carry the same generation-vs-PV warning."""
     assert "/device/report" in SERVER_INSTRUCTIONS
-    assert "AC-Ertrag" in SERVER_INSTRUCTIONS
+    assert "AC yield" in SERVER_INSTRUCTIONS
     assert "charge_energy_total" in SERVER_INSTRUCTIONS
     # exact field takes precedence over the approximation
     assert "pv_generation_today_kwh" in SERVER_INSTRUCTIONS
     assert "PVEnergyTotal" in SERVER_INSTRUCTIONS
     # latency/rounding caveat so the LLM prefers realtime for "today exact"
     assert "realtime" in SERVER_INSTRUCTIONS
-    assert "0,1 kWh" in SERVER_INSTRUCTIONS
+    assert "0.1 kWh" in SERVER_INSTRUCTIONS
 
 
 def _bare_server(tools, api_client=None):
