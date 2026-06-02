@@ -286,6 +286,35 @@ class FoxESSAPIClient:
         
         return self._make_request('POST', self.endpoints['historical_data'], data)
     
+    def get_pv_energy_total_history(self,
+                                    device_sn: str = None,
+                                    begin_ts: int = None,
+                                    end_ts: int = None) -> Dict[str, Any]:
+        """
+        Get the cumulative DC PV counter (PVEnergyTotal) as a time series.
+
+        PVEnergyTotal is measured at the PV/module input, so its daily delta is
+        the true PV generation the inverter app shows — unlike `generation`
+        (AC yield) which misses DC-side battery charging. Used to derive the
+        exact `pv_generation_today_kwh`.
+
+        Args:
+            device_sn: Device serial number (uses default if None)
+            begin_ts: Window start, epoch milliseconds (local-day midnight)
+            end_ts: Window end, epoch milliseconds
+
+        Returns:
+            /device/history response with a PVEnergyTotal data series
+        """
+        sn = device_sn or self.auth.get_device_sn()
+        data = {
+            'sn': sn,
+            'begin': int(begin_ts),
+            'end': int(end_ts),
+            'variables': ['PVEnergyTotal'],
+        }
+        return self._make_request('POST', self.endpoints['historical_data'], data)
+
     def get_report_data(self,
                        device_sn: str = None,
                        year: int = None,

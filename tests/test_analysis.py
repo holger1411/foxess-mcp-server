@@ -350,10 +350,12 @@ class TestAnalysisTool:
         
         result = await analysis_tool.execute(args)
         
-        # Should use cached data, not call API
+        # Should use cached data, not re-call the realtime API.
+        # (The realtime path also does an independent cached lookup for the exact
+        # daily PV value, so cache.get may be called more than once.)
         mock_api_client.get_realtime_data.assert_not_called()
-        mock_cache_manager.get.assert_called_once()
-        
+        assert mock_cache_manager.get.called
+
         assert result["analysis_type"] == "realtime"
 
 

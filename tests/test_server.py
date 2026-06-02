@@ -28,7 +28,9 @@ def test_analysis_description_warns_generation_is_ac_yield():
     assert "generation" in desc
     assert "AC-Ertrag" in desc
     assert "charge_energy_total" in desc  # the approximation formula
-    assert "today_generation" in desc  # warns it is often 0
+    assert "today_generation" in desc
+    assert "pv_generation_today_kwh" in desc  # the exact PVEnergyTotal-delta field
+    assert "PVEnergyTotal" in desc
 
 
 def test_server_instructions_warn_generation_is_ac_yield():
@@ -36,6 +38,9 @@ def test_server_instructions_warn_generation_is_ac_yield():
     assert "/device/report" in SERVER_INSTRUCTIONS
     assert "AC-Ertrag" in SERVER_INSTRUCTIONS
     assert "charge_energy_total" in SERVER_INSTRUCTIONS
+    # exact field takes precedence over the approximation
+    assert "pv_generation_today_kwh" in SERVER_INSTRUCTIONS
+    assert "PVEnergyTotal" in SERVER_INSTRUCTIONS
     # latency/rounding caveat so the LLM prefers realtime for "today exact"
     assert "realtime" in SERVER_INSTRUCTIONS
     assert "0,1 kWh" in SERVER_INSTRUCTIONS
