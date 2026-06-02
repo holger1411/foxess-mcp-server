@@ -541,7 +541,16 @@ class DataProcessor:
                 'min': min(v for v in values if v > 0) if any(v > 0 for v in values) else 0
             }
             totals[standard_name] = round(total, 2)
-        
+
+        # Derived field: PV-Erzeugungs-Näherung.
+        # `generation` ist nur der AC-Ertrag; DC-seitiges Batterieladen fehlt dort.
+        # PV ≈ generation + charge_energy_total. NÄHERUNG, kein exakter PV-Wert
+        # (genauer wäre PVEnergyTotal-Tagesdifferenz oder pvPower-Integration).
+        if 'generation' in totals or 'charge_energy_total' in totals:
+            totals['pv_generation_estimate_kwh'] = round(
+                totals.get('generation', 0) + totals.get('charge_energy_total', 0), 2
+            )
+
         # Create summary table (easy to read format)
         summary_table = self._create_report_summary_table(processed_variables, time_labels, dimension)
         
@@ -640,7 +649,14 @@ class DataProcessor:
                 else:
                     row['self_consumption'] = 0
                     row['self_consumption_ratio'] = 0
-            
+
+            # PV-Erzeugungs-Näherung pro Periode (siehe process_report_response):
+            # generation (AC-Ertrag) + Batterieladung. Näherung, kein exakter PV-Wert.
+            if 'generation' in row or 'charge_energy_total' in row:
+                row['pv_generation_estimate'] = round(
+                    row.get('generation', 0) + row.get('charge_energy_total', 0), 2
+                )
+
             table.append(row)
         
         return table
